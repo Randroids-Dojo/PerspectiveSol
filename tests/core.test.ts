@@ -80,6 +80,17 @@ test("a held fold button toggles once; rapid releases preserve physics and progr
   assert.ok(g.elapsed > before);
   assert.equal(g.status, "playing");
 });
+test("each fresh fold press works immediately, including rapid reversals", () => {
+  const g = new Game();
+  for (let i = 0; i < 10; i++) {
+    g.step({ ...EMPTY, shift: true }, 1 / 120);
+    assert.equal(g.mode, i % 2 === 0 ? "2d" : "3d");
+    g.step(EMPTY, 1 / 120);
+  }
+  assert.equal(g.shifts, 10);
+  assert.equal(g.deaths, 0);
+  assert.equal(g.player.grounded, true);
+});
 test("projected landing links a distant island and unfolding retains its actual support", () => {
   const g = new Game();
   const r = runChapter(g);

@@ -67,7 +67,6 @@ export class Game {
   coyote = 0.12;
   buffer = 0;
   invincible = 0;
-  shiftCooldown = 0;
   noticeCooldown = 0;
   lastJump = false;
   lastShift = false;
@@ -115,7 +114,6 @@ export class Game {
     this.coyote = 0.12;
     this.buffer = 0;
     this.invincible = 0;
-    this.shiftCooldown = 0;
     this.events = [];
     this.lastJump = false;
     this.lastShift = false;
@@ -199,10 +197,9 @@ export class Game {
     };
   }
   shift() {
-    if (this.status !== "playing" || this.shiftCooldown > 0) return;
+    if (this.status !== "playing") return;
     this.mode = this.mode === "3d" ? "2d" : "3d";
     this.shifts++;
-    this.shiftCooldown = 0.18;
     this.player.vz = 0;
     // A collapsed landing belongs to a real island. Unfold at that island's depth.
     if (this.mode === "3d" && this.player.grounded && this.support) {
@@ -232,7 +229,6 @@ export class Game {
     this.time += dt;
     this.elapsed += dt;
     this.invincible = Math.max(0, this.invincible - dt);
-    this.shiftCooldown = Math.max(0, this.shiftCooldown - dt);
     this.noticeCooldown = Math.max(0, this.noticeCooldown - dt);
     if (input.shift && !this.lastShift) this.shift();
     this.lastShift = input.shift;

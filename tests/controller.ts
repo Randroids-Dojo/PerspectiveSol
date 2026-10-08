@@ -112,7 +112,7 @@ export class RouteController {
       x: axis(aimX - b.x),
       z: g.mode === "3d" ? axis(aimZ - b.z) : 0,
       jump,
-      shift: shift && !g.lastShift && g.shiftCooldown <= 0,
+      shift: shift && !g.lastShift,
       interact: this.target >= g.level.platforms.length,
     };
   }

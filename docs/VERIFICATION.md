@@ -4,7 +4,7 @@ Date: October 7, 2026 (America/Chicago).
 
 ## Behavioral checks
 
-`npm run check` passes 16 behavioral tests, strict TypeScript checking, and the production build. The tests cover movement and landing in both modes, variable jumps, coyote time, jump buffering, held and released fold inputs, midair state preservation, projected landings, 3D wall bypasses, moving-island inheritance, checkpoint recovery, sentinel collision, seed-gated kindling, complete campaign progression, save restoration and corruption, replay, and safe checkpoint placement.
+`npm run check` passes 17 behavioral tests, strict TypeScript checking, and the production build. The tests cover movement and landing in both modes, variable jumps, coyote time, jump buffering, held and released fold inputs, immediate rapid reversals, midair state preservation, projected landings, 3D wall bypasses, moving-island inheritance, checkpoint recovery, sentinel collision, seed-gated kindling, complete campaign progression, save restoration and corruption, replay, and safe checkpoint placement.
 
 The route controller provides ordinary movement, jumping, folding, and kindling inputs. It has no completion or collection shortcut. It completes every chapter with all three sun seeds and zero deaths, including wall detours, sentinel depth bypasses, and midair folds.
 
