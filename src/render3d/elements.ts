@@ -670,9 +670,10 @@ export class Elements {
       }
       this.moteMesh.instanceMatrix.needsUpdate = true;
     }
-    const current = game.checkpointId;
+    // Checkpoints are reached in order, so every one up to the current one is lit.
+    const current = game.level.checkpoints.findIndex((v) => v.id === game.checkpointId);
     for (const c of this.checks) {
-      if (c.c.id === current && !c.lit) {
+      if (current >= 0 && game.level.checkpoints.indexOf(c.c) <= current && !c.lit) {
         c.lit = true;
         c.t = 0;
       }

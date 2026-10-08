@@ -538,7 +538,13 @@ Object.assign(window, {
   },
 });
 
-const loading = document.querySelector("#loading");
-loading?.classList.add("gone");
-setTimeout(() => loading?.remove(), 800);
+// The loading veil lifts once the first frames have compiled their shaders.
+let framesDrawn = 0;
+function lift() {
+  if (++framesDrawn < 3) return requestAnimationFrame(lift);
+  const loading = document.querySelector("#loading");
+  loading?.classList.add("gone");
+  setTimeout(() => loading?.remove(), 800);
+}
 requestAnimationFrame(frame);
+requestAnimationFrame(lift);

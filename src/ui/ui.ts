@@ -124,9 +124,15 @@ export class Interface {
       const t = e.target as HTMLInputElement;
       if (t.dataset.key) this.onAction({ type: "setting", key: t.dataset.key as keyof Settings, value: Number(t.value) });
     });
+    // Hover moves focus only after a real mouse movement, not when a new screen
+    // appears under a resting cursor.
+    let moved = 0;
+    root.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse" && (e.movementX || e.movementY)) moved = performance.now();
+    });
     root.addEventListener("pointerover", (e) => {
       const b = (e.target as Element).closest<HTMLElement>(".screen button:not(:disabled)");
-      if (b && document.activeElement !== b && e.pointerType === "mouse") {
+      if (b && document.activeElement !== b && e.pointerType === "mouse" && performance.now() - moved < 150) {
         b.focus({ preventScroll: true });
         this.onSound("ui-move");
       }
@@ -271,6 +277,8 @@ export class Interface {
 
   private show(screen: Screen, html: string, back: Action, cls = "") {
     this.screen = screen;
+    this.root.querySelector("#toast")?.classList.remove("on");
+    this.hideHint();
     this.backAction = back;
     this.panel.hidden = false;
     this.panel.className = `screen screen-${screen} ${cls}`;
