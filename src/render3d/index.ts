@@ -7,7 +7,7 @@ import { FOV, pose, type Pose } from "./camera";
 import { Effects } from "./effects";
 import { Elements, type LightCandidate } from "./elements";
 import { Bucket, Buckets } from "./geo";
-import { type Ctx, type Scatter, buildIsland } from "./islands";
+import { type Ctx, type Occluders, type Scatter, buildIsland } from "./islands";
 import { Keeper } from "./keeper";
 import { Mats } from "./materials";
 import { type Mood, makeMood, makePal } from "./mood";
@@ -26,7 +26,7 @@ import { Rng, clamp, hashString, mixCol, smooth } from "./util";
 export class Sculpted implements WorldRenderer {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.3, 4000);
+  private camera = new THREE.PerspectiveCamera(FOV, 16 / 9, 0.8, 4000);
   /** Everything that flattens during the fold. */
   private world = new THREE.Group();
   private backdrop = new Backdrop();
@@ -60,7 +60,6 @@ export class Sculpted implements WorldRenderer {
   private disposables: { dispose(): void }[] = [];
   private lastInfo = { calls: 0, triangles: 0, points: 0, lines: 0 };
   private exitPos = new THREE.Vector3();
-  private compiled = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -122,7 +121,9 @@ export class Sculpted implements WorldRenderer {
       if (i.only || i.motion || i.lantern) continue;
       const r = new Rng(hashString(i.id) ^ (level.theme.seed * 2654435761));
       const shape = { id: i.id, x: i.x, y: i.y, z: i.z, w: i.w, d: i.d, h: i.h, style: i.style };
+      ctx.occluders = occludersFor(level, i);
       buildIsland(stat, shape, r, ctx);
+      ctx.occluders = undefined;
       const blockers = blockersFor(level, i.id);
       const clear = i.id === level.exit.island ? keepClear : keepClear.slice(0, -1);
       dress(stat, shape, r, ctx, blockers, clear);
@@ -172,13 +173,38 @@ export class Sculpted implements WorldRenderer {
     this.effects.clear();
     const e = level.exit;
     this.exitPos.set(e.x, e.y, e.z);
-    this.compiled = false;
+    this.warm(level);
   }
+
+  /** Compile all programs now, against the HDR target, so the first frames and the first fold never hitch. */
+  private warm(level: Level) {
+    const t0 = performance.now();
+    const v: ViewFrame = {
+      width: this.width,
+      height: this.height,
+      dpr: this.dpr,
+      focus: { x: level.start.x + 2, y: level.start.y + 1.5, z: level.start.z },
+      viewHeight: 12.5,
+      fold: 0,
+      heading: "unfold",
+      sinceSwitch: 9,
+      shake: 0,
+      reduced: false,
+      cinematic: 0,
+    };
+    this.placeCamera(v, 0);
+    this.world.updateMatrixWorld(true);
+    // Hidden effects (rings, beam, flames) are compiled too: compile() walks every object.
+    this.post.warm(this.renderer, this.scene, this.camera);
+    this.warmMs = performance.now() - t0;
+  }
+  private warmMs = 0;
 
   private addBuckets(b: Buckets, parent: THREE.Object3D, shadows: boolean) {
     const M = this.mats;
     const pairs: [Bucket, THREE.Material, boolean][] = [
       [b.matte, M.matte, true],
+      [b.rock, M.rock, false],
       [b.paving, M.paving, true],
       [b.ruin, M.ruin, true],
       [b.foliage, M.foliage, true],
@@ -363,10 +389,6 @@ export class Sculpted implements WorldRenderer {
     this.post.apply(mood, view.reduced);
 
     this.renderer.info.reset();
-    if (!this.compiled) {
-      this.renderer.compile(this.scene, this.camera);
-      this.compiled = true;
-    }
     this.post.render(this.renderer, this.scene, this.camera, clock);
     const info = this.renderer.info.render;
     this.lastInfo = { calls: info.calls, triangles: info.triangles, points: info.points, lines: info.lines };
@@ -551,8 +573,22 @@ export class Sculpted implements WorldRenderer {
       depth: this.pose.depth,
       side: this.pose.side,
       cross: CROSS,
+      warmMs: Math.round(this.warmMs),
     };
   }
+}
+
+/** Walls, lanterns and the observatory standing on an island darken the ground around them. */
+function occludersFor(level: Level, i: Level["islands"][number]): Occluders {
+  const on = (x: number, z: number, y: number) => Math.abs(x - i.x) < i.w / 2 + 0.5 && Math.abs(z - i.z) < i.d / 2 + 0.5 && Math.abs(y - i.y) < 0.3;
+  const rects: Occluders["rects"] = [];
+  const dots: Occluders["dots"] = [];
+  for (const w of level.walls)
+    if (w.kind !== "rock" && on(w.x, w.z, w.y)) rects.push({ x0: w.x - w.w / 2, x1: w.x + w.w / 2, z0: w.z - w.d / 2, z1: w.z + w.d / 2 });
+  for (const l of level.lanterns) if (on(l.x, l.z, l.y)) dots.push({ x: l.x, z: l.z, r: 0.22 });
+  const e = level.exit;
+  if (e.island === i.id) dots.push({ x: e.x, z: e.z, r: 1.45 });
+  return { rects, dots };
 }
 
 // ------------------------------------------------------------ scatter bits

@@ -4,6 +4,7 @@ import {
   Bucket,
   Buckets,
   blob,
+  gridMesh,
   box,
   capFan,
   extrude,
@@ -17,7 +18,7 @@ import {
   xf,
 } from "./geo";
 import type { Pal } from "./mood";
-import { Rng, TAU, clamp, fbm2, lerp, mixCol, noise2 } from "./util";
+import { Rng, TAU, clamp, fbm2, lerp, mixCol, noise2, smooth } from "./util";
 
 /** Instance lists filled while building, turned into instanced meshes afterwards. */
 export type Scatter = {
@@ -25,8 +26,26 @@ export type Scatter = {
   flowers: { m: THREE.Matrix4; c: THREE.Color }[];
 };
 
+/** Things standing on island tops that darken the ground around them. */
+export type Occluders = { rects: { x0: number; x1: number; z0: number; z1: number }[]; dots: { x: number; z: number; r: number }[] };
+
+/** Contact darkening on a top at (x, z): 1 is open ground. */
+export function groundAO(o: Occluders | undefined, x: number, z: number) {
+  if (!o) return 1;
+  let k = 1;
+  for (const r of o.rects) {
+    const dx = Math.max(r.x0 - x, 0, x - r.x1),
+      dz = Math.max(r.z0 - z, 0, z - r.z1);
+    k *= 1 - 0.4 * Math.exp(-Math.hypot(dx, dz) / 0.45);
+  }
+  for (const d of o.dots) k *= 1 - 0.32 * Math.exp(-Math.max(0, Math.hypot(d.x - x, d.z - z) - d.r) / 0.3);
+  return k;
+}
+
 export type Ctx = {
   pal: Pal;
+  /** Contact shadows for the island being built. */
+  occluders?: Occluders;
   time: TimeOfDay;
   seed: number;
   /** 1 on high quality, lower on low. */
@@ -107,77 +126,107 @@ function walls(
     const y = lerp(yTop, yBot, r / rows);
     rings.push(ringAt(s, base, y, 0, (i) => inset(r, i)));
   }
-  const g = orientOutward(stitch(rings), V(s.x, 0, s.z));
-  bk.add(g, { color: opts.color, flat: opts.flat ?? true, uv: opts.uv });
+  const g = gridMesh(rings, V(s.x, 0, s.z));
+  bk.add(g, { color: opts.color, flat: opts.flat ?? false, uv: opts.uv });
 }
 
 /**
- * The floating rock beneath an island: a tapering, ridged, stratified mass
- * that sits inside the footprint so it never reads as a ledge.
- * Returns points on its surface where roots can hang.
+ * The floating rock beneath an island: a dense, softly displaced mass with
+ * rounded strata, tapering to a point. It sits inside the footprint so it
+ * never reads as a ledge. Returns points on its surface where roots can hang.
  */
 function underside(
   bk: Bucket,
   s: Shape,
-  base: [number, number][],
+  _base: [number, number][],
   yTop: number,
   depth: number,
   r: Rng,
   ctx: Ctx,
   inset = 0.05,
+  res = 0.26,
 ) {
   const pal = ctx.pal;
-  const n = base.length;
+  const fine = res < 0.5;
   const seed = r.int(0, 100000);
-  const K = clamp(Math.round(depth / 0.8), 4, 12);
+  const rc = Math.min(s.w, s.d) * 0.22;
+  const ring = roundedRing(s.w - 2 * inset, s.d - 2 * inset, rc, res);
+  const n = ring.length;
+  const K = clamp(Math.round(depth / (res * 1.1)), 6, fine ? 36 : 18);
   const driftA = r.range(0, TAU),
-    drift = Math.min(s.w, s.d) * r.range(0.04, 0.16);
-  const ridgeAmt = r.range(0.1, 0.22);
-  const sx0 = (s.w - 2 * inset) / s.w,
-    sz0 = (s.d - 2 * inset) / s.d;
+    drift = Math.min(s.w, s.d) * r.range(0.04, 0.14);
+  const lumpAmt = r.range(0.22, 0.32);
+  const bandH = r.range(0.6, 0.85);
   const rings: Ring[] = [];
   const anchors: { p: THREE.Vector3; t: number }[] = [];
   const centreAt = (t: number) =>
     V(s.x + Math.cos(driftA) * drift * Math.pow(t, 1.5), 0, s.z + Math.sin(driftA) * drift * Math.pow(t, 1.5));
-  const mk = (t: number, y: number, k: number) => {
-    const c = centreAt(t);
-    return base.map(([bx, bz], i) => {
-      const u = i / n;
-      const ridge = fbm2(u * 11, t * 1.2, seed, 2);
-      const j = noise2(i * 1.3, t * 9, seed + 3);
-      const m = k * (1 - ridgeAmt * ridge * Math.pow(t, 0.55) - 0.07 * j * Math.min(1, t * 3));
-      return V(c.x + bx * sx0 * m, y + (noise2(i * 0.7, t * 5, seed + 9) - 0.5) * 0.12 * Math.min(1, t * 4), c.z + bz * sz0 * m);
-    });
-  };
   for (let k = 0; k <= K; k++) {
     const t = k / K;
-    const y = yTop - depth * Math.pow(t, 1.12) * 0.92;
-    const prof = k === 0 ? 1 : Math.pow(1 - t * 0.94, 0.78) * (1 - 0.22 * t) * (0.97 + 0.06 * noise2(k, 1, seed));
-    rings.push(mk(t, y, prof));
-    if (k > 0 && k < K - 1 && r.chance(0.55)) rings.push(mk(t + 0.01, y - 0.08, prof * 0.93));
-    if (k >= 1 && t < 0.55) for (let a = 0; a < 2; a++) anchors.push({ p: rings[rings.length - 1][r.int(0, n - 1)].clone(), t });
+    // Ease the spacing so the shoulder near the top gets more rings.
+    const y = yTop - depth * Math.pow(t, 1.25) * 0.94;
+    const prof = k === 0 ? 1 : Math.pow(1 - Math.pow(t, 1.35) * 0.96, 0.85);
+    const c = centreAt(t);
+    const pts = ring.map(([bx, bz]) => {
+      const wx = s.x + bx,
+        wz = s.z + bz;
+      const lump = fbm2(wx * 0.3 + y * 0.16, wz * 0.3 - y * 0.12, seed, 3);
+      const flute = fbm2(wx * 1.3 + wz * 0.4, wz * 1.3 + y * 0.08, seed + 7, 2);
+      const warp = fbm2(wx * 0.2, wz * 0.2, seed + 3, 2) * 1.6;
+      const band = 0.5 + 0.5 * Math.sin(((yTop - y) / bandH + warp) * TAU);
+      const ledge = smooth(0.62, 0.97, band) * Math.min(1, t * 6);
+      const m = prof * (1 - lumpAmt * lump * Math.pow(t, 0.45) - 0.09 * flute * Math.min(1, t * 3) - 0.07 * ledge);
+      return V(c.x + bx * m, y, c.z + bz * m);
+    });
+    rings.push(pts);
+    if (k >= 2 && t < 0.5 && k % 2 === 0) for (let a = 0; a < 2; a++) anchors.push({ p: pts[r.int(0, n - 1)].clone(), t });
   }
   const tipC = centreAt(1);
-  const tip = V(tipC.x + r.range(-0.3, 0.3), yTop - depth, tipC.z + r.range(-0.3, 0.3));
-  const g = orientOutward(stitch(rings, tip), V(s.x, 0, s.z));
-  const variants = [
-    pal.rock.clone(),
-    mixCol(pal.rock, pal.stone, 0.35),
-    mixCol(pal.rock, pal.earth, 0.45),
-    mixCol(pal.rock, pal.stoneShade, 0.6),
-  ];
+  const tip = V(tipC.x + r.range(-0.25, 0.25), yTop - depth, tipC.z + r.range(-0.25, 0.25));
+  const g = gridMesh(rings, V(s.x, 0, s.z), tip);
+  // Hanging lobes break the single-cone silhouette.
+  const lobes: THREE.BufferGeometry[] = [];
+  const nl = res > 1 ? 0 : Math.min(2, Math.floor((s.w + s.d) / 6));
+  for (let l = 0; l < nl; l++) {
+    const lx = s.x + r.range(-0.28, 0.28) * s.w,
+      lz = s.z + r.range(-0.25, 0.15) * s.d;
+    const lr = Math.min(s.w, s.d) * r.range(0.24, 0.32);
+    const ly = yTop - depth * r.range(0.1, 0.2);
+    const ld = depth * r.range(0.4, 0.55);
+    const lring = roundedRing(lr * 2, lr * 2, lr * 0.99, fine ? 0.2 : 0.35);
+    const LK = Math.max(5, Math.round(ld / (fine ? 0.3 : 0.5)));
+    const lrings: Ring[] = [];
+    for (let k = 0; k <= LK; k++) {
+      const t = k / LK;
+      const y = ly - ld * t;
+      const prof = Math.pow(1 - Math.pow(t, 1.15) * 0.95, 0.9) * (0.75 + 0.25 * Math.sin(Math.min(1, t * 3 + 0.3) * Math.PI * 0.5));
+      lrings.push(
+        lring.map(([bx, bz]) => {
+          const lump = fbm2((lx + bx) * 0.5 + y * 0.2, (lz + bz) * 0.5, seed + 11 + l, 2);
+          const m = prof * (1 - 0.25 * lump);
+          return V(lx + bx * m, y, lz + bz * m);
+        }),
+      );
+    }
+    lobes.push(gridMesh(lrings, V(lx, 0, lz), V(lx + r.range(-0.1, 0.1), ly - ld - 0.2, lz)));
+  }
+  const tones = [mixCol(pal.rock, pal.stone, 0.45), mixCol(pal.rock, pal.earth, 0.35), mixCol(pal.rock, pal.stone, 0.2), mixCol(pal.rock, pal.stoneShade, 0.5)];
   const deep = pal.rockDeep;
-  bk.add(g, {
-    flat: true,
-    color: (p, nn, out) => {
-      const tt = clamp((yTop - p.y) / depth, 0, 1);
-      const band = Math.floor((yTop - p.y) / 0.42 + fbm2(p.x * 0.35, p.z * 0.35, seed, 2) * 1.6);
-      out.copy(variants[((band % 4) + 4) % 4]);
-      out.lerp(deep, Math.pow(tt, 0.75) * 0.82);
-      const down = nn.y < -0.2 ? 0.78 : 1;
-      out.multiplyScalar(down * (0.92 + 0.16 * noise2(p.x * 2.1, p.y * 2.3, seed)));
-    },
-  });
+  const tmp = new THREE.Color();
+  const paint = (p: THREE.Vector3, nn: THREE.Vector3, out: THREE.Color) => {
+    const tt = clamp((yTop - p.y) / depth, 0, 1);
+    const v = (yTop - p.y) / (bandH * 0.62) + fbm2(p.x * 0.18, p.z * 0.18, seed + 3, 2) * 1.6;
+    const i0 = ((Math.floor(v) % tones.length) + tones.length) % tones.length;
+    const f = smooth(0.82, 1, v - Math.floor(v));
+    out.copy(tones[i0]).lerp(tmp.copy(tones[(i0 + 1) % tones.length]), f);
+    out.lerp(deep, Math.pow(tt, 0.8) * 0.72);
+    // Ledge tops catch light, undercuts sit in shadow, the lip shades the top band.
+    out.multiplyScalar(nn.y > 0.25 ? 1 + (nn.y - 0.25) * 0.5 : 0.78 + 0.22 * clamp(nn.y + 1, 0, 1));
+    out.multiplyScalar(0.6 + 0.4 * smooth(0, 0.6, yTop - p.y));
+    out.multiplyScalar(0.97 + 0.06 * noise2(p.x * 0.9, p.y * 0.9, seed));
+  };
+  bk.add(g, { color: paint });
+  for (const lg of lobes) bk.add(lg, { color: paint });
   return { anchors, bottom: yTop - depth, tip };
 }
 
@@ -226,15 +275,14 @@ function hangers(b: Buckets, anchors: { p: THREE.Vector3; t: number }[], s: Shap
 /** Small floating rocks that hang near the underside for scale. */
 function debris(b: Buckets, s: Shape, bottom: number, r: Rng, ctx: Ctx, n: number) {
   for (let i = 0; i < n; i++) {
-    const g = blob(r.range(0.18, 0.5) * Math.min(1.4, s.w * 0.15 + 0.4), r, 0.3, 0);
+    const g = blob(r.range(0.18, 0.5) * Math.min(1.4, s.w * 0.15 + 0.4), r, 0.16, 2);
     const side = r.chance(0.5) ? -1 : 1;
     const x = s.x + side * r.range(0.3, 0.8) * (s.w / 2 + 0.6);
     const y = lerp(s.y - s.h, bottom, r.range(0.5, 1.1));
     const z = s.z + r.range(-0.5, 0.5) * s.d;
-    b.matte.add(g, {
-      m: xf(x, y, z, r.range(0, 3), r.range(0, 3), 0, 1, r.range(0.6, 1)),
-      flat: true,
-      color: (_p, nn, out) => out.copy(ctx.pal.rock).lerp(ctx.pal.rockDeep, nn.y < 0 ? 0.6 : 0.25),
+    b.rock.add(g, {
+      m: xf(x, y, z, r.range(0, 3), r.range(0, 3), 0, 1, r.range(0.55, 0.8)),
+      color: (_p, nn, out) => out.copy(mixCol(ctx.pal.rock, ctx.pal.stone, 0.2)).lerp(ctx.pal.rockDeep, 0.35 - nn.y * 0.3),
     });
   }
 }
@@ -244,20 +292,21 @@ function grassCap(b: Buckets, s: Shape, base: [number, number][], r: Rng, ctx: C
   const pal = ctx.pal;
   const seed = r.int(0, 99999);
   const g = topGrid(s.w, s.d, rc, 0.5);
-  const dry = pal.grassDry,
+  const dry = mixCol(pal.grassDry, pal.stone, 0.1),
     lush = mixCol(pal.grass, pal.foliage, 0.35),
-    light = mixCol(pal.grass, "#f4f0b0", 0.18);
+    light = mixCol(pal.grass, "#f4f0b0", 0.18),
+    turf = mixCol(pal.grass, pal.stone, 0.08);
   b.matte.add(g, {
     m: xf(s.x, s.y, s.z),
     color: (p, _n, out) => {
       const f = fbm2(p.x * 0.33, p.z * 0.33, seed, 3);
       const f2 = noise2(p.x * 1.7, p.z * 1.7, seed + 1);
-      out.copy(pal.grass);
+      out.copy(turf);
       if (f > 0.56) out.lerp(dry, clamp((f - 0.56) * 4, 0, 0.7));
       if (f < 0.42) out.lerp(lush, clamp((0.42 - f) * 4, 0, 0.6));
       const edge = Math.min(s.w / 2 - Math.abs(p.x - s.x), s.d / 2 - Math.abs(p.z - s.z));
       if (edge < 0.35) out.lerp(light, (0.35 - edge) * 1.2);
-      out.multiplyScalar(0.94 + f2 * 0.12);
+      out.multiplyScalar((0.94 + f2 * 0.12) * groundAO(ctx.occluders, p.x, p.z));
     },
   });
   // Lip: a short skirt with irregular hanging tongues.
@@ -277,8 +326,9 @@ function grassCap(b: Buckets, s: Shape, base: [number, number][], r: Rng, ctx: C
 /** Stone top: paving with a carved cornice. */
 function stoneCap(bk: Bucket, s: Shape, base: [number, number][], ctx: Ctx, rc: number, tile: number) {
   const pal = ctx.pal;
-  const top = topGrid(s.w, s.d, rc, 2);
-  bk.add(top, { m: xf(s.x, s.y, s.z), color: pal.stone.clone().multiplyScalar(1.02), uv: pavingUV(tile) });
+  const top = topGrid(s.w, s.d, rc, 0.6);
+  const stone = pal.stone.clone().multiplyScalar(1.02);
+  bk.add(top, { m: xf(s.x, s.y, s.z), color: (p, _n, out) => out.copy(stone).multiplyScalar(groundAO(ctx.occluders, p.x, p.z)), uv: pavingUV(tile) });
   const r0 = ringAt(s, base, s.y, 0);
   const r1 = ringAt(s, base, s.y - 0.05, -0.04);
   const r2 = ringAt(s, base, s.y - 0.2, -0.04);
@@ -349,26 +399,37 @@ export function buildIsland(b: Buckets, s: Shape, r: Rng, ctx: Ctx, o: BuildOpts
     out.copy(pick === 0 ? pal.earth : pick === 1 ? ochre : sand);
     // Dark topsoil under the grass, fading into the strata.
     out.lerp(topsoil, clamp(1 - (depth - 0.06) / 0.28, 0, 1) * 0.8);
-    // Vertical water stains.
-    const stain = noise2(p.x * 1.3 + p.z * 1.1, 0.5, seed + 4);
-    out.multiplyScalar(0.86 + 0.14 * stain + 0.08 * noise2(p.x * 4, p.y * 4, seed));
+    // Faint vertical water stains.
+    const stain = noise2(p.x * 1.1 + p.z * 0.9, 0.5, seed + 4);
+    out.multiplyScalar(0.92 + 0.08 * stain);
   };
   const masonry = (bk: Bucket, tint: THREE.Color, tile: number, yTop: number) =>
-    walls(bk, s, base, yTop, s.y - s.h, 1, () => 0.02, {
+    walls(bk, s, base, yTop, s.y - s.h, far ? 1 : Math.max(3, Math.round((yTop - s.y + s.h) / 0.22)), () => 0.02, {
       color: (p, _n, out) => {
         out.copy(tint);
-        out.multiplyScalar(0.8 + 0.2 * clamp(1 - (yTop - p.y) / Math.max(0.5, s.h), 0, 1));
+        const below = yTop - p.y;
+        // Shadow under the cornice lip, then a gentle darkening toward the rock.
+        out.multiplyScalar((0.72 + 0.28 * smooth(0, 0.32, below)) * (1 - 0.14 * clamp(below / Math.max(0.5, s.h), 0, 1)));
       },
       flat: false,
       uv: pavingUV(tile),
     });
 
+  if (ctx.time === "night" && !far) moonEdge(b, s, rc);
   switch (style) {
     case "garden": {
       grassCap(b, s, base, r, ctx, rc);
-      walls(b.matte, s, base, s.y - 0.06, s.y - s.h, far ? 1 : 5, (row, i) => (row === 0 ? 0.0 : 0.012 + 0.05 * noise2(i * 0.9, row * 1.7, seed) + (row % 2 === 0 ? 0.025 : 0)), {
-        color: earth,
-      });
+      {
+        // A soft earthen band: coherent lumps, finer rows, smooth shading.
+        const fineBase = far ? base : roundedRing(s.w, s.d, rc, 0.22);
+        const rows = far ? 2 : Math.max(4, Math.round(s.h / 0.16));
+        walls(b.rock, s, fineBase, s.y - 0.06, s.y - s.h, rows, (row, i) => {
+          if (row === 0) return 0;
+          const [bx, bz] = fineBase[i];
+          const y = s.y - 0.06 - ((s.h - 0.06) * row) / rows;
+          return 0.012 + 0.07 * fbm2((s.x + bx) * 0.7 + y * 0.4, (s.z + bz) * 0.7, seed, 3) + 0.02 * smooth(0.6, 1, Math.sin(y * 9 + bx) * 0.5 + 0.5);
+        }, { color: earth });
+      }
       const stones = !far && s.w >= 4 && s.d >= 3 ? steppingStones(b, s, r, ctx) : [];
       if (ctx.scatter && !far) scatterGrass(ctx.scatter, s, r, ctx, 1, stones);
       break;
@@ -393,7 +454,8 @@ export function buildIsland(b: Buckets, s: Shape, r: Rng, ctx: Ctx, o: BuildOpts
     }
   }
   if (o.underside !== false && style !== "bridge") {
-    const u = underside(b.matte, s, base, s.y - s.h + 0.02, depth, r, ctx);
+    const res = far ? 1.3 : ctx.detail >= 0.9 ? 0.26 : ctx.detail >= 0.5 ? 0.42 : 0.65;
+    const u = underside(b.rock, s, base, s.y - s.h + 0.02, depth, r, ctx, 0.05, res);
     anchors = u.anchors;
     bottom = u.bottom;
     if (!far) {
@@ -560,7 +622,7 @@ function plinthBody(b: Buckets, s: Shape, base: [number, number][], ctx: Ctx) {
 export function scatterGrass(sc: Scatter, s: Shape, r: Rng, ctx: Ctx, density: number, avoid: { x: number; z: number; r: number }[] = []) {
   const pal = ctx.pal;
   const area = s.w * s.d;
-  const n = Math.round(area * 9 * density * ctx.detail);
+  const n = Math.round(area * 7 * density * ctx.detail);
   const flowerCols = flowerPalette(ctx);
   for (let i = 0; i < n; i++) {
     const edgeBias = r.next() < 0.45;
@@ -571,10 +633,13 @@ export function scatterGrass(sc: Scatter, s: Shape, r: Rng, ctx: Ctx, density: n
       else x = s.x + (r.chance(0.5) ? -1 : 1) * (s.w / 2 - r.range(0.06, 0.5));
     }
     if (avoid.some((a) => (a.x - x) ** 2 + (a.z - z) ** 2 < a.r * a.r)) continue;
+    // Thinner through the middle of the top, where the keeper walks and lands.
+    const lane = 1 - smooth(0.18, 0.36, Math.abs(z - s.z) / s.d);
+    if (lane > 0 && r.next() < lane * 0.55) continue;
     const sc0 = r.range(0.75, 1.25) * (edgeBias ? 1.15 : 0.9);
     const m = xf(x, s.y, z, 0, r.range(0, TAU), 0, sc0, sc0 * r.range(0.7, 1.2), sc0);
     const f = fbm2(x * 0.33, z * 0.33, 0, 3);
-    const c = mixCol(pal.grass, f > 0.55 ? pal.grassDry : pal.leafLight, r.range(0.1, 0.45));
+    const c = mixCol(mixCol(pal.grass, f > 0.55 ? pal.grassDry : pal.leafLight, r.range(0.1, 0.4)), pal.stone, 0.12);
     sc.grass.push({ m, c });
     if (r.chance(0.32 * density + 0.05)) {
       const fs = r.range(0.75, 1.2);
@@ -606,50 +671,54 @@ export function flowerPalette(ctx: Ctx) {
 /** A natural sea-stack spire that fills a wall's box and roots into the cloud sea. */
 export function spire(b: Buckets, w: { x: number; y: number; z: number; w: number; d: number; h: number }, r: Rng, ctx: Ctx) {
   const pal = ctx.pal;
-  const base = roundedRing(w.w, w.d, Math.min(w.w, w.d) * 0.32, 0.32);
-  const n = base.length;
+  const fine = ctx.detail >= 0.9;
+  const base = roundedRing(w.w, w.d, Math.min(w.w, w.d) * 0.4, fine ? 0.18 : 0.3);
   const seed = r.int(0, 9999);
-  const layers = Math.max(4, Math.round(w.h / 0.42));
-  const rings: Ring[] = [];
-  const at = (y: number, k: number, t: number) =>
-    base.map(([bx, bz], i) => {
-      const ridge = fbm2((i / n) * 9, t * 2.2, seed, 2);
-      const m = k * (1 - 0.16 * ridge - 0.04 * noise2(i * 1.7, t * 13, seed + 1));
-      return V(w.x + bx * m, y, w.z + bz * m);
-    });
-  for (let k = 0; k <= layers; k++) {
-    const t = k / layers;
-    const y = w.y + w.h * (1 - t);
-    const sc = lerp(0.8, 1.0, Math.pow(t, 0.7)) * (0.95 + 0.05 * noise2(k, 2, seed));
-    rings.push(at(y, sc, t));
-    if (k > 0 && k < layers && k % 2 === 1) rings.push(at(y - 0.07, sc * 0.92, t + 0.005));
-  }
-  // Root into the clouds.
   const below = 9;
-  for (let k = 1; k <= 5; k++) {
-    const t = k / 5;
-    rings.push(at(w.y - below * Math.pow(t, 1.1), Math.pow(1 - t * 0.92, 0.9), 1 + t));
+  const total = w.h + below;
+  const K = Math.round(total / (fine ? 0.22 : 0.4));
+  const rings: Ring[] = [];
+  const bandH = 0.7;
+  for (let k = 0; k <= K; k++) {
+    const t = k / K;
+    const y = w.y + w.h - total * t;
+    const under = y < w.y ? (w.y - y) / below : 0;
+    // Slightly narrower at the crown, full at the base, then tapering into the clouds.
+    const sc = (y >= w.y ? lerp(0.82, 1.0, Math.pow((w.y + w.h - y) / w.h, 0.6)) : Math.pow(1 - under * 0.93, 0.9)) * (0.96 + 0.04 * noise2(k * 0.3, 2, seed));
+    rings.push(
+      base.map(([bx, bz]) => {
+        const wx = w.x + bx,
+          wz = w.z + bz;
+        const lump = fbm2(wx * 0.6 + y * 0.18, wz * 0.6 - y * 0.15, seed, 3);
+        const flute = fbm2(wx * 2.2 + wz * 0.7, wz * 2.2 + y * 0.05, seed + 5, 2);
+        const band = 0.5 + 0.5 * Math.sin(((w.y + w.h - y) / bandH + fbm2(wx * 0.4, wz * 0.4, seed + 2, 2) * 1.5) * TAU);
+        const m = sc * (1 - 0.22 * lump - 0.12 * flute - 0.08 * smooth(0.62, 0.97, band));
+        return V(w.x + bx * m, y, w.z + bz * m);
+      }),
+    );
   }
-  const g = orientOutward(stitch(rings, V(w.x, w.y - below - 0.6, w.z)), V(w.x, 0, w.z));
-  const tones = [pal.rock.clone(), mixCol(pal.rock, pal.stone, 0.35), mixCol(pal.rock, pal.earth, 0.4)];
-  b.matte.add(g, {
-    flat: true,
+  const g = gridMesh(rings, V(w.x, 0, w.z), V(w.x, w.y - below - 0.6, w.z));
+  const tones = [mixCol(pal.rock, pal.stone, 0.35), mixCol(pal.rock, pal.stone, 0.6), mixCol(pal.rock, pal.earth, 0.35), mixCol(pal.rock, pal.stone, 0.45)];
+  const tmp = new THREE.Color();
+  b.rock.add(g, {
     color: (p, nn, out) => {
-      const band = Math.floor((w.y + w.h - p.y) / 0.45 + fbm2(p.x * 0.4, p.z * 0.4, seed, 2) * 1.5);
-      out.copy(tones[((band % 3) + 3) % 3]);
+      const v = (w.y + w.h - p.y) / 0.5 + fbm2(p.x * 0.4, p.z * 0.4, seed, 2) * 2;
+      const i0 = ((Math.floor(v) % tones.length) + tones.length) % tones.length;
+      out.copy(tones[i0]).lerp(tmp.copy(tones[(i0 + 1) % tones.length]), smooth(0.7, 1, v - Math.floor(v)));
       out.lerp(pal.rockDeep, clamp((w.y - p.y) / below, 0, 1) * 0.8);
-      if (nn.y > 0.5) out.lerp(mixCol(pal.grass, pal.foliage, 0.5), 0.7);
-      out.multiplyScalar(nn.y < -0.3 ? 0.75 : 1);
+      // Moss gathers on up-facing ledges.
+      if (nn.y > 0.45 && p.y > w.y) out.lerp(mixCol(pal.grass, pal.foliage, 0.5), clamp((nn.y - 0.45) * 2.5, 0, 0.75));
+      out.multiplyScalar(0.8 + 0.2 * clamp(nn.y + 1, 0, 1));
     },
   });
   // Mossy crown.
   const top = rings[0];
   b.matte.add(capFan(top.map((v) => [v.x, v.z] as [number, number]), w.y + w.h, w.x, w.z), { color: mixCol(pal.grass, pal.foliage, 0.35) });
   for (let i = 0; i < 6; i++)
-    b.matte.add(blob(r.range(0.2, 0.4), r, 0.3, 1, 0.45), {
+    b.foliage.add(blob(r.range(0.22, 0.42), r, 0.18, 2, 0.45, true), {
       m: xf(w.x + r.range(-0.3, 0.3) * w.w, w.y + w.h + 0.02, w.z + r.range(-0.3, 0.3) * w.d),
-      flat: true,
       color: mixCol(pal.grass, pal.foliage, r.range(0.2, 0.6)),
+      sway: 0.05,
     });
 }
 
@@ -679,4 +748,37 @@ function steppingStones(b: Buckets, s: Shape, r: Rng, ctx: Ctx) {
     });
   }
   return out;
+}
+
+/** At night, a faint moonlit line traces every walkable top edge so jumps stay judgeable. */
+export function moonEdge(b: Buckets, s: Shape, rc: number) {
+  const ring = roundedRing(s.w, s.d, rc, 0.3);
+  const pos: number[] = [];
+  const n = ring.length;
+  const k0 = 0.012,
+    k1 = 0.055;
+  const at = (i: number, inset: number) => {
+    const [bx, bz] = ring[i % n];
+    return [s.x + bx * (1 - (2 * inset) / s.w), s.y + 0.008, s.z + bz * (1 - (2 * inset) / s.d)];
+  };
+  for (let i = 0; i < n; i++) {
+    const a = at(i, k0),
+      b2 = at(i, k1),
+      c = at(i + 1, k0),
+      d = at(i + 1, k1);
+    pos.push(...a, ...c, ...b2, ...b2, ...c, ...d);
+  }
+  // Face up.
+  const e1 = new THREE.Vector3(pos[3] - pos[0], pos[4] - pos[1], pos[5] - pos[2]);
+  const e2 = new THREE.Vector3(pos[6] - pos[0], pos[7] - pos[1], pos[8] - pos[2]);
+  if (e1.cross(e2).y < 0)
+    for (let i = 0; i < pos.length; i += 9)
+      for (let k = 0; k < 3; k++) {
+        const t = pos[i + 3 + k];
+        pos[i + 3 + k] = pos[i + 6 + k];
+        pos[i + 6 + k] = t;
+      }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  b.glow.add(g, { color: new THREE.Color("#a8c4ff").multiplyScalar(0.55) });
 }

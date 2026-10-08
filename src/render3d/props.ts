@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Level } from "../sim/types";
 import { Buckets, blob, box, boxB, cylB, extrude, gear, lathe, sphere, torus, tube, xf } from "./geo";
 import type { Ctx, Shape } from "./islands";
-import { Rng, TAU, clamp, lerp, mixCol, noise2 } from "./util";
+import { Rng, TAU, clamp, lerp, mixCol, smooth } from "./util";
 
 /**
  * Chapter set dressing. Big props stand just behind an island's back edge so
@@ -14,55 +14,97 @@ const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 // ------------------------------------------------------------------ flora
 
+/** Leaf colours: a cool shadow, the base, and a warm sunlit top. */
+function leafTones(base: THREE.Color, ctx: Ctx) {
+  const pal = ctx.pal;
+  return {
+    shade: mixCol(base, pal.ink, 0.42),
+    base,
+    lit: mixCol(mixCol(base, pal.leafLight, 0.6), "#fff0b8", 0.12),
+  };
+}
+
+/** A soft canopy made of overlapping lumps whose normals bend away from a shared centre. */
+function canopy(
+  b: Buckets,
+  r: Rng,
+  centre: THREE.Vector3,
+  radii: THREE.Vector3,
+  count: number,
+  lumpR: number,
+  tones: { shade: THREE.Color; base: THREE.Color; lit: THREE.Color },
+  sway: number,
+  groundY: number,
+  detail = 1,
+) {
+  const tmp = new THREE.Color();
+  const lumpDetail = detail >= 0.9 ? 1 : 0;
+  for (let i = 0; i < count; i++) {
+    // Points on an ellipsoid shell, biased upward, so the outline reads full.
+    const a = r.range(0, TAU),
+      e = r.range(-0.35, 1);
+    const c = new THREE.Vector3(
+      centre.x + Math.cos(a) * Math.sqrt(1 - e * e) * radii.x * 0.62,
+      centre.y + e * radii.y * 0.6,
+      centre.z + Math.sin(a) * Math.sqrt(1 - e * e) * radii.z * 0.62,
+    );
+    const rr = lumpR * r.range(0.75, 1.2);
+    const g = blob(rr, r, 0.16, lumpDetail, 0.9, true);
+    const vary = r.range(0.9, 1.08);
+    b.foliage.add(g, {
+      m: xf(c.x, c.y, c.z, 0, r.range(0, TAU), 0),
+      bend: { centre, amount: 0.5, squash: radii.y / Math.max(radii.x, radii.z) },
+      color: (q, nn, out) => {
+        const h = clamp((q.y - (centre.y - radii.y)) / (radii.y * 2), 0, 1);
+        const lightness = clamp(nn.y * 0.45 + 0.35 + h * 0.35, 0, 1);
+        out.copy(tones.shade).lerp(tones.base, smooth(0, 0.5, lightness)).lerp(tmp.copy(tones.lit), smooth(0.55, 1, lightness)).multiplyScalar(vary);
+      },
+      sway: (q) => clamp((q.y - groundY) / Math.max(1, centre.y + radii.y - groundY), 0, 1) * sway,
+    });
+  }
+}
+
 export function cypress(b: Buckets, r: Rng, x: number, y: number, z: number, h: number, ctx: Ctx) {
   const pal = ctx.pal;
-  b.matte.add(cylB(0.07, 0.1, h * 0.25, 6), { m: xf(x, y, z), color: pal.bark });
-  const prof: [number, number][] = [];
-  const n = 9;
-  const rad = h * 0.15;
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const rr = rad * Math.pow(Math.sin(Math.PI * Math.pow(t, 0.62)), 0.9) * (1 - t * 0.25);
-    prof.push([Math.max(0.01, rr), t * h * 0.92]);
+  b.matte.add(cylB(0.06, 0.1, h * 0.3, 6), { m: xf(x, y, z), color: pal.bark });
+  const tones = leafTones(mixCol(pal.foliage, pal.ink, 0.12), ctx);
+  const R = h * 0.12;
+  const n = Math.max(7, Math.round(h * (ctx.detail >= 0.9 ? 4.5 : 3.2)));
+  const centre = new THREE.Vector3(x, y + h * 0.55, z);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const rr = R * Math.pow(Math.sin(Math.PI * (0.1 + 0.9 * Math.pow(t, 0.7))), 0.85) * r.range(0.92, 1.04) + R * 0.1;
+    const cy = y + h * (0.16 + 0.8 * t);
+    const g = blob(rr * 1.12, r, 0.14, ctx.detail >= 0.9 ? 1 : 0, 1.5, true);
+    const vary = r.range(0.9, 1.08);
+    const side = r.range(0, TAU);
+    b.foliage.add(g, {
+      m: xf(x + Math.cos(side) * rr * 0.25, cy, z + Math.sin(side) * rr * 0.25, 0, r.range(0, TAU), 0),
+      bend: { centre, amount: 0.62, squash: 3.6 },
+      color: (q, nn, out) => {
+        const ht = clamp((q.y - y) / h, 0, 1);
+        const lightness = clamp(nn.x * 0.25 + nn.y * 0.3 + 0.3 + ht * 0.3, 0, 1);
+        out.copy(tones.shade).lerp(tones.base, smooth(0, 0.5, lightness)).lerp(tmp.copy(tones.lit), smooth(0.55, 1, lightness) * 0.8).multiplyScalar(vary);
+      },
+      sway: (q) => clamp((q.y - y) / h, 0, 1) * 0.55,
+    });
   }
-  const g = lathe(prof, 9);
-  const p = g.attributes.position as THREE.BufferAttribute;
-  const seed = r.int(0, 9999);
-  for (let i = 0; i < p.count; i++) {
-    const px = p.getX(i),
-      py = p.getY(i),
-      pz = p.getZ(i);
-    const a = Math.atan2(pz, px);
-    const k = 1 + (noise2(a * 2.2, py * 2.4, seed) - 0.5) * 0.45;
-    p.setXYZ(i, px * k, py, pz * k);
-  }
-  const dark = mixCol(pal.foliage, pal.ink, 0.35);
-  const light = pal.leafLight;
-  b.foliage.add(g, {
-    m: xf(x, y + h * 0.1, z, 0, r.range(0, TAU), 0),
-    flat: true,
-    color: (q, nn, out) => out.copy(dark).lerp(light, clamp(nn.y * 0.6 + 0.25 + (q.y - y) / h * 0.25, 0, 0.85)),
-    sway: (q) => clamp((q.y - y) / h, 0, 1) * 0.5,
-  });
 }
 
 export function roundTree(b: Buckets, r: Rng, x: number, y: number, z: number, s: number, ctx: Ctx, kind: "olive" | "round" | "wisteria" | "citrus") {
   const pal = ctx.pal;
-  const h = s * r.range(1.6, 2.1);
-  const lean = r.range(-0.25, 0.25);
+  const h = s * r.range(1.5, 1.9);
+  const lean = r.range(-0.22, 0.22);
   const top = V(x + lean * s, y + h, z + r.range(-0.1, 0.1));
   const trunk = [V(x, y - 0.2, z), V(x + lean * s * 0.2, y + h * 0.35, z), V(x - lean * s * 0.2, y + h * 0.7, z), top];
   const tr = kind === "olive" ? 0.11 * s : 0.08 * s;
-  b.matte.add(tube(trunk, (t) => tr * (1.25 - t * 0.6), 6), { color: pal.bark, flat: true });
-  // Branches.
-  const branches = r.int(2, 4);
-  const tips: THREE.Vector3[] = [top];
-  for (let i = 0; i < branches; i++) {
+  b.matte.add(tube(trunk, (t) => tr * (1.3 - t * 0.6), 7), { color: pal.bark });
+  for (let i = 0; i < 2; i++) {
     const a = r.range(0, TAU);
-    const from = trunk[2].clone().lerp(top, r.range(0, 0.6));
-    const tip = from.clone().add(V(Math.cos(a) * s * 0.7, r.range(0.2, 0.6) * s, Math.sin(a) * s * 0.4 - 0.1));
-    b.matte.add(tube([from, from.clone().lerp(tip, 0.5).add(V(0, 0.1, 0)), tip], (t) => tr * 0.55 * (1 - t * 0.6), 5), { color: pal.bark });
-    tips.push(tip);
+    const from = trunk[2].clone().lerp(top, r.range(0, 0.5));
+    const tip = from.clone().add(V(Math.cos(a) * s * 0.55, r.range(0.25, 0.5) * s, Math.sin(a) * s * 0.35));
+    b.matte.add(tube([from, from.clone().lerp(tip, 0.5).add(V(0, 0.08, 0)), tip], (t) => tr * 0.55 * (1 - t * 0.6), 5), { color: pal.bark });
   }
   const leafBase =
     kind === "olive"
@@ -72,42 +114,28 @@ export function roundTree(b: Buckets, r: Rng, x: number, y: number, z: number, s
         : kind === "citrus"
           ? mixCol(pal.foliage, pal.grass, 0.25)
           : pal.foliage;
-  const leafHi = kind === "olive" ? mixCol(leafBase, "#e8ecd6", 0.35) : mixCol(leafBase, pal.leafLight, 0.55);
-  const shadow = mixCol(leafBase, pal.ink, 0.35);
-  for (const t of tips) {
-    const k = r.int(2, 3);
-    for (let i = 0; i < k; i++) {
-      const rr = s * r.range(0.42, 0.62) * (kind === "olive" ? 0.85 : 1);
-      const g = blob(rr, r, 0.28, 1, kind === "olive" ? 0.7 : 0.82);
-      const cx = t.x + r.range(-0.3, 0.3) * s,
-        cy = t.y + r.range(-0.1, 0.25) * s,
-        cz = t.z + r.range(-0.25, 0.2) * s;
-      b.foliage.add(g, {
-        m: xf(cx, cy, cz, 0, r.range(0, TAU), 0),
-        flat: true,
-        color: (_q, nn, out) => out.copy(shadow).lerp(leafHi, clamp(nn.y * 0.55 + 0.45 + nn.x * 0.1, 0, 1)),
-        sway: 0.35,
-      });
-    }
-  }
+  const tones = leafTones(leafBase, ctx);
+  const cr = s * (kind === "olive" ? 0.85 : 0.95);
+  const centre = V(top.x, top.y + cr * 0.15, top.z);
+  canopy(b, r, centre, V(cr, cr * (kind === "olive" ? 0.62 : 0.75), cr * 0.85), Math.round((9 + s * 4) * (ctx.detail >= 0.9 ? 1 : 0.7)), cr * 0.48, tones, 0.4, y, ctx.detail);
   if (kind === "wisteria") {
     const bloom = [new THREE.Color("#b58ce8"), new THREE.Color("#d6a8ff"), new THREE.Color("#9a7ae0")];
-    for (let i = 0; i < 9; i++) {
-      const t = r.pick(tips);
-      const c = new THREE.ConeGeometry(0.1 * s, r.range(0.5, 0.9) * s, 5).rotateX(Math.PI);
+    for (let i = 0; i < 10; i++) {
+      const a = r.range(0, TAU);
+      const c = new THREE.ConeGeometry(0.09 * s, r.range(0.5, 0.9) * s, 6).rotateX(Math.PI);
       b.foliage.add(c, {
-        m: xf(t.x + r.range(-0.6, 0.6) * s, t.y - 0.35 * s, t.z + r.range(-0.3, 0.4) * s),
+        m: xf(centre.x + Math.cos(a) * cr * 0.75, centre.y - cr * 0.55, centre.z + Math.sin(a) * cr * 0.6),
         color: r.pick(bloom),
-        flat: true,
-        sway: 0.6,
+        sway: 0.7,
       });
     }
   }
   if (kind === "citrus") {
-    for (let i = 0; i < 10; i++) {
-      const t = r.pick(tips);
+    for (let i = 0; i < 12; i++) {
+      const a = r.range(0, TAU),
+        e = r.range(-0.3, 0.8);
       b.matte.add(sphere(0.06 * s, 6, 4), {
-        m: xf(t.x + r.range(-0.45, 0.45) * s, t.y + r.range(-0.35, 0.3) * s, t.z + r.range(-0.1, 0.5) * s),
+        m: xf(centre.x + Math.cos(a) * cr * 0.8 * Math.sqrt(1 - e * e), centre.y + e * cr * 0.55, centre.z + Math.sin(a) * cr * 0.7 * Math.sqrt(1 - e * e)),
         color: new THREE.Color("#f29a26"),
       });
     }
@@ -116,17 +144,9 @@ export function roundTree(b: Buckets, r: Rng, x: number, y: number, z: number, s
 
 export function shrub(b: Buckets, r: Rng, x: number, y: number, z: number, s: number, ctx: Ctx, tint?: THREE.Color) {
   const pal = ctx.pal;
-  const base = tint ?? mixCol(pal.foliage, pal.grass, 0.3);
-  const n = r.int(2, 4);
-  for (let i = 0; i < n; i++) {
-    const rr = s * r.range(0.25, 0.42);
-    b.foliage.add(blob(rr, r, 0.3, 1, 0.75), {
-      m: xf(x + r.range(-0.3, 0.3) * s, y + rr * 0.55, z + r.range(-0.2, 0.2) * s),
-      flat: true,
-      color: (_q, nn, out) => out.copy(mixCol(base, pal.ink, 0.3)).lerp(mixCol(base, pal.leafLight, 0.5), clamp(nn.y * 0.6 + 0.4, 0, 1)),
-      sway: 0.12,
-    });
-  }
+  const tones = leafTones(tint ?? mixCol(pal.foliage, pal.grass, 0.3), ctx);
+  const R = s * 0.42;
+  canopy(b, r, V(x, y + R * 0.6, z), V(R, R * 0.7, R * 0.85), 5, R * 0.55, tones, 0.12, y, ctx.detail);
 }
 
 // ------------------------------------------------------------- architecture
@@ -528,16 +548,32 @@ export function dress(b: Buckets, s: Shape, r: Rng, ctx: Ctx, blockers: Blocker[
   const back = s.z - s.d / 2;
   const free = (x: number, rad: number, height: number) => {
     for (const k of keepClear) if (Math.abs(k.x - x) < k.r + rad && k.z < back + 1.5) return false;
+    const pz = back - rad;
     for (const o of blockers) {
+      // Anything playable behind the prop could be hidden by it: in the
+      // three-quarter view (the camera sits front-right, so near things cover
+      // far things to their left) and in the flattened side view of the fold.
       if (o.z1 > back + 0.2) continue;
-      if (o.x1 < x - rad - 1.2 || o.x0 > x + rad + 1.2) continue;
+      const dz = Math.max(0, pz - o.z1);
+      if (o.x1 < x - rad - 1.6 - dz * 0.5 || o.x0 > x + rad + 1.6) continue;
       if (o.y1 < s.y - 6 || o.y0 > s.y + height + 4) continue;
       return false;
     }
+    // Landing corners: where a neighbour reaches this island near its back edge, keep that end clear.
+    for (const o of blockers) {
+      // Only neighbours that sit toward this island's back (a far row reaching its back corner).
+      const oz = (o.z0 + o.z1) / 2;
+      if (oz > s.z - s.d * 0.3 || !(o.z1 > back - 1.5 && o.z0 < back + 2.5)) continue;
+      const leftGap = s.x - s.w / 2 - o.x1,
+        rightGap = o.x0 - (s.x + s.w / 2);
+      if (leftGap > -0.5 && leftGap < 4.5 && x - rad < s.x - s.w / 2 + 3.5) return false;
+      if (rightGap > -0.5 && rightGap < 4.5 && x + rad > s.x + s.w / 2 - 3.5) return false;
+    }
     return true;
   };
-  let cursor = s.x - s.w / 2 + r.range(0.2, 0.9);
-  const end = s.x + s.w / 2 - 0.2;
+  // Keep big props off the island's ends, where the keeper lands from the next island.
+  let cursor = s.x - s.w / 2 + (s.w > 5 ? 1.1 : 0.4) + r.range(0, 0.6);
+  const end = s.x + s.w / 2 - (s.w > 5 ? 1.1 : 0.4);
   const placeBehind = (rad: number, height: number, fn: (x: number, z: number, y: number) => void) => {
     if (cursor + rad > end + 0.4) return false;
     const x = cursor + rad;
@@ -718,6 +754,7 @@ export function blockersFor(level: Level, exclude: string): Blocker[] {
     out.push({ x0: i.x - i.w / 2 - rx, x1: i.x + i.w / 2 + rx, z0: i.z - i.d / 2 - rz, z1: i.z + i.d / 2 + rz, y0: i.y - i.h, y1: i.y + 2 });
   }
   for (const w of level.walls) out.push({ x0: w.x - w.w / 2, x1: w.x + w.w / 2, z0: w.z - w.d / 2, z1: w.z + w.d / 2, y0: w.y, y1: w.y + w.h });
+  for (const l of level.lanterns) out.push({ x0: l.x - 0.4, x1: l.x + 0.4, z0: l.z - 0.4, z1: l.z + 0.4, y0: l.y, y1: l.y + 1.8 });
   for (const s of level.sentinels) out.push({ x0: s.x - 1.5, x1: s.x + 1.5, z0: s.z - 1.5, z1: s.z + 1.5, y0: s.y - 1, y1: s.y + 1 });
   for (const p of level.pickups) out.push({ x0: p.x - 0.5, x1: p.x + 0.5, z0: p.z - 0.5, z1: p.z + 0.5, y0: p.y - 0.5, y1: p.y + 0.5 });
   return out;

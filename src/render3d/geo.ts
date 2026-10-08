@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { Rng, TAU } from "./util";
 
 /**
@@ -16,6 +17,8 @@ export type AddOpts = {
   spin?: { pivot: THREE.Vector3; axis: THREE.Vector3; speed: number };
   /** World-mapped UVs for paving: called with the transformed position and normal. */
   uv?: (p: THREE.Vector3, n: THREE.Vector3) => [number, number];
+  /** Bend normals away from a centre (soft, unified shading for canopies). */
+  bend?: { centre: THREE.Vector3; amount: number; squash?: number };
 };
 
 const P = new THREE.Vector3();
@@ -51,6 +54,17 @@ export class Bucket {
     const pos = geo.attributes.position.array as Float32Array;
     const nor = geo.attributes.normal.array as Float32Array;
     const n = pos.length / 3;
+    if (o.bend) {
+      const { centre, amount } = o.bend;
+      const sq = o.bend.squash ?? 1;
+      for (let i = 0; i < n; i++) {
+        P.fromArray(pos, i * 3).sub(centre);
+        P.y /= sq;
+        P.normalize();
+        N.fromArray(nor, i * 3).lerp(P, amount).normalize();
+        N.toArray(nor, i * 3);
+      }
+    }
     const col = new Float32Array(n * 3);
     const paint = o.color ?? new THREE.Color(1, 1, 1);
     const src = geo.attributes.color;
@@ -161,8 +175,9 @@ export class Buckets {
   metal = new Bucket("metal", { spin: true });
   glow = new Bucket("glow");
   glass = new Bucket("glass");
+  rock = new Bucket("rock");
   list() {
-    return [this.matte, this.paving, this.ruin, this.foliage, this.metal, this.glow, this.glass];
+    return [this.matte, this.paving, this.ruin, this.foliage, this.metal, this.glow, this.glass, this.rock];
   }
 }
 
@@ -245,11 +260,18 @@ export function tube(points: THREE.Vector3[], r: (t: number) => number, radial =
   return g;
 }
 
-/** A lumpy faceted blob, for canopies, shrubs and rocks. */
-export function blob(r: number, rng: Rng, lump = 0.22, detail = 1, squash = 1) {
-  const g = new THREE.IcosahedronGeometry(r, detail);
+/** A lumpy blob, for canopies, shrubs and rocks. Faceted unless smooth is set. */
+export function blob(r: number, rng: Rng, lump = 0.22, detail = 1, squash = 1, smooth = false) {
+  let g: THREE.BufferGeometry = new THREE.IcosahedronGeometry(r, detail);
+  if (smooth) {
+    g.deleteAttribute("normal");
+    g.deleteAttribute("uv");
+    g = mergeVertices(g, 1e-4);
+  }
   const p = g.attributes.position as THREE.BufferAttribute;
   const seen = new Map<string, number>();
+  const ox = rng.range(0, 50),
+    oz = rng.range(0, 50);
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i),
       y = p.getY(i),
@@ -257,7 +279,10 @@ export function blob(r: number, rng: Rng, lump = 0.22, detail = 1, squash = 1) {
     const k = `${x.toFixed(3)},${y.toFixed(3)},${z.toFixed(3)}`;
     let s = seen.get(k);
     if (s === undefined) {
-      s = 1 + (rng.next() - 0.5) * 2 * lump;
+      // Smooth blobs use coherent noise so lumps stay soft; faceted ones jitter freely.
+      s = smooth
+        ? 1 + (Math.sin(x / r * 2.1 + ox) * Math.sin(y / r * 1.7 + oz) * 0.5 + Math.sin(z / r * 2.6 + ox * 0.5) * 0.5) * lump
+        : 1 + (rng.next() - 0.5) * 2 * lump;
       seen.set(k, s);
     }
     p.setXYZ(i, x * s, y * s * squash, z * s);
@@ -440,4 +465,51 @@ export function gear(r: number, teeth: number, thick: number, hole = 0.35) {
     }
   }
   return extrude(s, thick, r > 0.5 ? Math.min(0.02, thick * 0.2) : 0, 4);
+}
+
+/**
+ * An indexed surface through stacked rings (same point count), optionally
+ * closed at the bottom by a tip. Shared vertices give smooth normals; the
+ * winding is chosen so normals face away from `centre`.
+ */
+export function gridMesh(rings: THREE.Vector3[][], centre: THREE.Vector3, tip?: THREE.Vector3) {
+  const n = rings[0].length;
+  const pos: number[] = [];
+  for (const ring of rings) for (const v of ring) pos.push(v.x, v.y, v.z);
+  let tipIndex = -1;
+  if (tip) {
+    tipIndex = pos.length / 3;
+    pos.push(tip.x, tip.y, tip.z);
+  }
+  const idx: number[] = [];
+  for (let k = 0; k < rings.length - 1; k++)
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const a = k * n + i,
+        b = (k + 1) * n + i,
+        c = k * n + j,
+        d = (k + 1) * n + j;
+      idx.push(a, b, c, c, b, d);
+    }
+  if (tip) {
+    const L = rings.length - 1;
+    for (let i = 0; i < n; i++) idx.push(L * n + i, tipIndex, L * n + ((i + 1) % n));
+  }
+  // Pick the winding from the first quad.
+  const a = rings[0][0],
+    b = rings[1][0],
+    c = rings[0][1];
+  const nrm = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+  const out = new THREE.Vector3(a.x - centre.x, 0, a.z - centre.z);
+  if (nrm.dot(out) < 0)
+    for (let i = 0; i < idx.length; i += 3) {
+      const t = idx[i + 1];
+      idx[i + 1] = idx[i + 2];
+      idx[i + 2] = t;
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
 }

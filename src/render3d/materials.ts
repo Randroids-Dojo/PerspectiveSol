@@ -14,6 +14,7 @@ export function cloneSol<M extends THREE.Material>(m: M): M {
 /** The shared sculpted materials. Colours live in vertex colours, so one set serves every chapter. */
 export class Mats {
   matte: THREE.MeshStandardMaterial;
+  rock: THREE.MeshStandardMaterial;
   paving: THREE.MeshStandardMaterial;
   ruin: THREE.MeshStandardMaterial;
   foliage: THREE.MeshStandardMaterial;
@@ -36,6 +37,7 @@ export class Mats {
     const ruin = makePavingTexture(true, 29);
     this.textures.push(pave, ruin);
     this.matte = patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93, metalness: 0 }), { grain: 0.22, rim: 1 });
+    this.rock = patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 }), { grain: 0.07, rim: 1.8 });
     this.paving = patch(new THREE.MeshStandardMaterial({ vertexColors: true, map: pave, roughness: 0.82, metalness: 0 }), { grain: 0.12, rim: 1 });
     this.ruin = patch(new THREE.MeshStandardMaterial({ vertexColors: true, map: ruin, roughness: 0.88, metalness: 0 }), { grain: 0.16, rim: 1 });
     this.foliage = patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0 }), { sway: "attr", foliage: true, rim: 0.8 });
@@ -127,7 +129,7 @@ export class Mats {
       c.customProgramCacheKey = () => key;
       return c;
     };
-    return { matte: mk(this.matte), paving: mk(this.paving), metal: mk(this.metal) };
+    return { matte: mk(this.matte), paving: mk(this.paving), metal: mk(this.metal), rock: mk(this.rock) };
   }
 
   /** Clipped copies for a sinking gate. */

@@ -25,12 +25,13 @@ export function buildScenery(level: Level, ctx: Ctx, far: boolean, quality: numb
     while (x < x1) {
       const w = r.range(5, 12),
         d = r.range(4, 8);
-      const z = r.range(-36, -18);
-      const y = midY + r.range(-10, -1) + (z < -28 ? r.range(0, 3) : 0);
+      // Well behind and below the lane so playable far islands (z about -12) never compete.
+      const z = r.range(-50, -27);
+      const y = midY + r.range(-12, -4) + (z < -40 ? r.range(0, 4) : 0);
       const s = { id: "bg", x, y, z, w, d, h: r.range(1, 2), style: r.pick(styles) };
       buildIsland(b, s, r, sub, { depth: r.range(4, 9) });
       landmark(b, s, r, sub);
-      x += w + r.range(8, 22) / Math.max(0.5, quality);
+      x += w + r.range(12, 28) / Math.max(0.5, quality);
     }
   } else {
     // Far silhouettes.
@@ -39,7 +40,7 @@ export function buildScenery(level: Level, ctx: Ctx, far: boolean, quality: numb
       const w = r.range(14, 34),
         d = r.range(10, 20);
       const z = r.range(-150, -70);
-      const y = midY + r.range(-14, 14);
+      const y = midY + r.range(-16, 3);
       const s = { id: "far", x, y, z, w, d, h: 3, style: r.pick(styles) };
       buildIsland(b, s, r, sub, { far: true, depth: r.range(10, 24) });
       if (r.chance(0.55)) dome(b, x + r.range(-0.2, 0.2) * w, y, z, r.range(2.5, 5), sub, ctx.time === "dusk" || ctx.time === "night");

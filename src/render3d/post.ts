@@ -83,7 +83,7 @@ export class Post {
     const hp = (this.bloom as unknown as { materialHighPassFilter: THREE.ShaderMaterial }).materialHighPassFilter;
     hp.fragmentShader = hp.fragmentShader.replace(
       "vec4 texel = texture2D( tDiffuse, vUv );",
-      "vec4 texel = texture2D( tDiffuse, vUv );\n\t\t\tif ( any( isnan( texel ) ) || any( isinf( texel ) ) ) texel = vec4( 0.0 );\n\t\t\ttexel = min( texel, vec4( 64.0 ) );",
+      "vec4 texel = texture2D( tDiffuse, vUv );\n\t\t\tif ( any( isnan( texel ) ) || any( isinf( texel ) ) ) texel = vec4( 0.0 );\n\t\t\ttexel = min( texel, vec4( 5.0 ) );",
     );
     hp.needsUpdate = true;
     this.mat = new THREE.ShaderMaterial({
@@ -129,6 +129,16 @@ export class Post {
     this.bloom.strength = mood.bloom.strength * (reduced ? 0.8 : 1);
     this.bloom.radius = mood.bloom.radius;
     this.bloom.threshold = mood.bloom.threshold;
+  }
+
+  /** Compile every program the frame will need (scene, shadow maps, bloom) without touching the screen. */
+  warm(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
+    renderer.setRenderTarget(this.rt);
+    renderer.compile(scene, camera);
+    renderer.clear(true, true, true);
+    renderer.render(scene, camera);
+    this.bloom.render(renderer, this.rt, this.rt, 0, false);
+    renderer.setRenderTarget(null);
   }
 
   render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, time: number) {

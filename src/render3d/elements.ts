@@ -198,6 +198,8 @@ export class Elements {
         this.mesh(seg(b.paving.build()), am.paving, g);
         this.mesh(seg(b.metal.build()), am.metal, g);
         this.mesh(seg(b.matte.build()), am.matte, g);
+        this.mesh(seg(b.rock.build()), am.rock, g);
+        this.mesh(seg(b.foliage.build()), am.matte, g);
         // Ruin tops would need their own copy; bridges use paving.
         const ruin = seg(b.ruin.build());
         if (ruin) this.mesh(ruin, am.paving, g);
@@ -210,9 +212,9 @@ export class Elements {
         dots.frustumCulled = false;
         dots.renderOrder = 19;
         g.add(dots);
-        this.disposables.push(dg, dm, am.paving, am.metal, am.matte);
+        this.disposables.push(dg, dm, am.paving, am.metal, am.matte, am.rock);
         this.group.add(g);
-        this.bridges.push({ island: i, group: g, uniform, dots, dotMat: dm, mats: [am.paving, am.metal, am.matte], was: -1 });
+        this.bridges.push({ island: i, group: g, uniform, dots, dotMat: dm, mats: [am.paving, am.metal, am.matte, am.rock], was: -1 });
       }
     }
 

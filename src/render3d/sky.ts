@@ -58,8 +58,8 @@ void main() {
     col += uGlow * pow( g, 300.0 ) * 0.9 + uSunCol * pow( g, 900.0 ) * 0.6;
   } else {
     float disc = smoothstep( uSunSize, uSunSize * 0.8, ang );
-    col += uSunCol * disc * 7.0;
-    col += uSunCol * pow( g, 400.0 ) * 1.4;
+    col += uSunCol * disc * 3.2;
+    col += uSunCol * pow( g, 400.0 ) * 0.8;
   }
   gl_FragColor = vec4( col, 1.0 );
 }`;

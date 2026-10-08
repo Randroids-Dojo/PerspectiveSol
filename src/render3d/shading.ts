@@ -128,7 +128,7 @@ uniform vec3 uDissolveGlow;
 vec3 solFogColor( vec3 base, vec3 world ) {
   vec3 vd = normalize( world - cameraPosition );
   float s = max( dot( vd, uSunDir ), 0.0 );
-  return mix( base, uSunFog, pow( s, 5.0 ) * 0.85 );
+  return mix( base, uSunFog, pow( s, 6.0 ) * 0.55 );
 }
 `;
 
@@ -168,6 +168,9 @@ const FRAG_OUT = /* glsl */ `
   vec3 vd = normalize( vSolWorld - cameraPosition );
   float back = pow( saturate( dot( vd, uSunDir ) ), 3.0 );
   outgoingLight += diffuseColor.rgb * uSunCol * back * 0.55;
+  // Warm translucent rim: light glowing through the edges of the canopy.
+  float fr = 1.0 - saturate( dot( normal, normalize( vViewPosition ) ) );
+  outgoingLight += diffuseColor.rgb * ( uSunCol * 0.9 + vec3( 0.25 ) ) * pow( fr, 2.2 ) * 0.5;
 }
 #endif
 #ifdef SOL_DISSOLVE

@@ -501,7 +501,7 @@ export class Keeper {
     const hidden = dissolve >= 0.999;
     this.mesh.visible = !hidden;
     this.eyes.visible = dissolve < 0.4;
-    this.xray.visible = !hidden && fold < 0.5;
+    this.xray.visible = !hidden;
     this.xrayMat.opacity = 0.42 * (1 - dissolve);
     this.visibleAmount = 1 - dissolve;
 
