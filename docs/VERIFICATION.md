@@ -35,4 +35,8 @@ Final capture of the campaign had no console errors or failed network requests. 
 
 ## Publication
 
-GitHub: Randroids-Dojo/PerspectiveSol. Vercel: perspective-sol in randroid88's projects. Git integration uses main for production and runs `npm run check`. Public access is configured. The release receipt is completed after the Git-triggered deployment and public-browser verification.
+GitHub: [Randroids-Dojo/PerspectiveSol](https://github.com/Randroids-Dojo/PerspectiveSol). Live game: [perspective-sol.vercel.app](https://perspective-sol.vercel.app). Vercel: perspective-sol in randroid88's projects. Git integration uses main for production and runs `npm run check`.
+
+Release code commit `f3f6a88` produced deployment `dpl_FHUG9MK1MW4rSL2hXLtCp8YPBiJD` automatically from Git, with target production and status READY. Its GitHub Actions run also completed successfully. No manual deployment was used. The production page and audio return HTTP 200 without authentication; its JavaScript and styles match the built release. The public browser loaded the game, decoded both music stems, accepted native keyboard folding and jumping, and reached the exact orthographic projection. Production exposes only the read-only snapshot diagnostic.
+
+A second full rendered run after graphics adaptation changes also completed all six chapters with all seeds and zero deaths. Completion, all chapter unlocks, records, the current checkpoint, collected seeds, and perspective were subsequently verified after a full page reload. Changes to this receipt are deployed through the same Git integration.
