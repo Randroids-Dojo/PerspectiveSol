@@ -1,50 +1,57 @@
 # Perspective Sol
 
-**A world with two ways through.** Carry a little sun through six floating observatories. Fold into a separately illustrated 2D world; unfold into a sculpted 3D world to explore depth and get around obstacles. The two independent renderers crossfade while motion, moving platforms, collectibles, checkpoints, timers, and the score keep their state.
+**Fold the world flat. Unfold it into depth.** Carry a little sun home through
+six floating observatories in a platformer with two separately made worlds: a
+sculpted three.js sky and an illustrated Canvas 2D storybook. Switch between
+them at any moment, even in midair. Folded, depth disappears: islands far apart
+become one path, and everything at every depth is in your way. Unfolded, depth
+is real: walk around walls and sentinels, ride ferries across the distance, and
+climb sunglass that only exists there.
 
 ## Play
 
 https://perspective-sol.vercel.app
 
-| Action                      | Keyboard              | Controller           |
-| --------------------------- | --------------------- | -------------------- |
-| Walk                        | A / D or left / right | Left stick           |
-| Explore depth in 3D         | W / S or up / down    | Left stick           |
-| Jump (hold for more height) | Space                 | A                    |
-| Fold / unfold               | Shift or X            | X or either shoulder |
-| Kindle the observatory      | E or Enter            | B                    |
-| Pause                       | Escape or P           | Start                |
-| Mute                        | M                     | Sound settings       |
+| Action | Keyboard | Controller | Touch |
+|---|---|---|---|
+| Walk | A D or ← → | Left stick or d-pad | Floating stick |
+| Depth (3D) | W S or ↑ ↓ | Left stick or d-pad | Stick up and down |
+| Jump (hold for height) | Space | A | Jump |
+| Fold or unfold | Shift or X | X, Y or a shoulder | Fold |
+| Pause | Esc or P | Start | II |
+| Mute | M | | |
 
-Touch controls are enabled on touch devices and can also be enabled in settings. Music, effects, gentle motion, and performance mode are configurable. Graphics adapt automatically when a device struggles; changing performance mode manually keeps your chosen quality. Golden floor rings are recovery checkpoints. Progress and best chapter times save on the current device. The game can be finished, revisited chapter by chapter, and replayed.
-
-## The journey
-
-- **The waking garden:** connect distant islands by folding their depth.
-- **The hidden courtyard:** unfold to walk around the sunwall.
-- **The tide engine:** ride moving islands and pass a rose sentinel.
-- **The violet archive:** combine depth detours, folds, and climbs.
-- **The night crossing:** carry the light across dusk and shifting islands.
-- **The last observatory:** restore the sun and reach the ending.
-
-Each chapter requires three sun seeds. Light motes are optional. Failure returns the keeper to a checkpoint and preserves collected light.
+Six chapters, each with three sun seeds to bring to its observatory, optional
+light motes, sundial checkpoints, best times and an ending. Settings cover
+music and effect volume, graphics quality, touch controls, gentle motion,
+screen shake and teaching hints. Progress saves on the device.
 
 ## Development
 
 ```sh
 npm ci
-npm run dev       # http://localhost:5186
-npm run check     # behavioral tests, TypeScript, production build
+npm run dev                 # http://localhost:5186
+npm run check               # simulation and campaign tests, TypeScript, production build
+node scripts/e2e.mjs        # the real game in Chrome: every chapter, folds, pause, saves, touch
+npx tsx scripts/routes.ts   # play every chapter's scripted solution in the simulation
+npx tsx scripts/map.ts      # blueprints of every chapter layout
+node scripts/audio-check.mjs  # objective music and sound checks (levels, clicks, key, continuity)
 ```
 
-Vite, TypeScript, Canvas 2D, and Three.js. The deterministic simulation in `src/core.ts` is shared by both renderers. `src/illustrated-world.ts` is a dedicated Canvas 2D renderer with its own illustrated island artwork, keeper animation, botanical silhouettes, architecture, particles, and parallax sky. It imports no Three.js code and consumes no 3D scene output. `src/world.ts` renders the sculpted 3D world, aligning its outgoing camera during the canvas crossfade. Fully folded play stops WebGL draw calls. Static sculpted artwork is batched by material; shadows, atmospheric layers, and bloom have a performance setting. No third-party asset service is needed during play.
+- `src/sim`: the one deterministic simulation both worlds share (`game.ts`),
+  the chapters (`chapters.ts`) and their scripted solutions (`routes.ts`).
+- `src/render3d`: the sculpted world. `src/render2d`: the illustrated world.
+  Neither reads the other; both draw the same instant from the simulation.
+- `src/audio`: the adaptive score and sound, all synthesised in code.
+- `src/main.ts`: the director (clock, shared camera, fold transition, events).
+  `src/ui`, `src/input.ts`, `src/save.ts`: interface, controls, progress.
+- `harness.html`: a development page for working on one renderer at a time.
 
-The original stereo score is shipped as two phase-aligned 48-second MP3 stems. The same AudioContext transport runs both stems; perspective opens and closes the depth stem without restarting the music. Sound effects are synthesized at runtime. To reproduce the stems, run `python3 scripts/compose.py` with ffmpeg installed. The fonts are bundled with their OFL licenses.
-
-`window.sol.snapshot()` reports the actual simulation, render mode, audio transport, and recent gameplay events. A development-only input source supports rendered end-to-end route tests; it is omitted from production. The route test performs movement, jumps, depth bypasses, midair folds, collection, and kindling through the ordinary input path.
+Design: [docs/DESIGN.md](docs/DESIGN.md). Art, sound and interface direction:
+[docs/WORLD.md](docs/WORLD.md). Verification: [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ## Deployment
 
-The GitHub repository is connected to the `perspective-sol` Vercel project in the same team as the other Dojo games. Pushes to `main` deploy production automatically; feature branches receive preview deployments. Vercel runs `npm run check` before publishing. GitHub Actions also runs the checks. No secrets or local Vercel metadata are committed.
-
-Design: [docs/DESIGN.md](docs/DESIGN.md). Verification receipt: [docs/VERIFICATION.md](docs/VERIFICATION.md).
+The repository is connected to the `perspective-sol` Vercel project. Pushes to
+`main` deploy production; other branches get preview deployments. Vercel runs
+`npm run check` before publishing, and GitHub Actions runs it on every push.

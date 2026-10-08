@@ -31,9 +31,21 @@ const check = (name, data = {}) => {
   console.log(`✓ ${name}`, Object.keys(data).length ? JSON.stringify(data) : "");
 };
 
+// The development server's hot reload would restart the page whenever a file
+// changes during a long run; a stub client keeps the run stable.
+const HMR_STUB = `
+export function createHotContext() { return { accept() {}, acceptExports() {}, dispose() {}, prune() {}, invalidate() {}, on() {}, off() {}, send() {}, decline() {}, data: {} }; }
+export function updateStyle(id, css) { let s = document.querySelector('style[data-vite-dev-id="' + id + '"]'); if (!s) { s = document.createElement('style'); s.setAttribute('data-vite-dev-id', id); document.head.appendChild(s); } s.textContent = css; }
+export function removeStyle() {}
+export function injectQuery(u) { return u; }
+export class ErrorOverlay {}
+`;
+
 async function open(viewport, touch = false) {
   const context = await browser.newContext({ viewport, hasTouch: touch, isMobile: touch, deviceScaleFactor: touch ? 2 : 1 });
   const page = await context.newPage();
+  if (!production)
+    await page.route("**/@vite/client", (r) => r.fulfill({ contentType: "application/javascript", body: HMR_STUB }));
   page.on("pageerror", (e) => results.errors.push(e.message));
   page.on("console", (m) => m.type() === "error" && results.errors.push(m.text()));
   page.on("requestfailed", (r) => results.errors.push(`${r.url()} ${r.failure()?.errorText}`));
