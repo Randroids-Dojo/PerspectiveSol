@@ -1,0 +1,25 @@
+{
+  "name": "perspective-sol",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5186",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5186",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "npm test && npm run build",
+    "format": "prettier --write src tests docs README.md index.html package.json tsconfig.json vite.config.ts vercel.json .github/workflows/check.yml"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/three": "0.180.0",
+    "prettier": "3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.9"
+  }
+}
