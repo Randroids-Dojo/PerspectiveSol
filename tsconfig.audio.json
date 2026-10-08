@@ -1,4 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "include": ["src/audio", "src/sim", "src/view.ts", "src/contract.ts"]
-}

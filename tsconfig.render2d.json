@@ -1,4 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "include": ["src/render2d", "src/sim", "src/view.ts", "src/contract.ts"]
-}

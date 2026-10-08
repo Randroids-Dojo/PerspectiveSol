@@ -1,58 +1,65 @@
-# Verification receipt
+# Verification
 
-## Independent 2D renderer correction
+How the game is checked, and the results recorded for the 2026-10-08 rebuild.
 
-Date: October 7, 2026 (America/Chicago). This supersedes the original release's camera-only 2D implementation.
+## Automated checks (`npm run check`, run by Vercel and GitHub Actions)
 
-The folded world now uses a separate Canvas 2D context and original illustrated artwork. Source inspection confirms that `src/illustrated-world.ts` imports no Three.js code and draws no 3D output. Fully folded play hides the WebGL canvas and skips its render pass. During an observed 1.2-second trial, WebGL frames stayed at 91 while illustrated frames advanced from 1,222 to 1,242; simulation time and the existing three-source music transport continued. A second headless native-input trial independently confirmed that WebGL frames stayed at 14, Canvas 2D frames advanced, and WebGL draw calls remained zero.
+- `tests/sim.test.ts`: movement tuning (full speed in 0.1 s, a held jump of
+  about 2.1 units, a short tap hop), coyote time and jump buffering, folding
+  joins depth-separated islands while unfolding restores their distance,
+  unfolding places the keeper at the depth of the island underfoot, walls seal
+  the folded path but can be walked around, a fold always succeeds and
+  overlapped solids stay passable until clear, star bridges and sunglass hold
+  only in their perspective, a far lantern lit while folded opens its gate and
+  forms its bridge, sentinels at other depths kill only while folded and
+  respawn keeps seeds, moving islands carry the keeper, the observatory waits
+  for three seeds, determinism and save/resume.
+- `tests/campaign.test.ts`: six chapters, three seeds each, consistent ids and
+  lantern links, and every chapter finished with all three seeds and no falls
+  by its scripted route through ordinary inputs (move, depth, jump, fold).
+- TypeScript strict mode and the production build.
 
-The complete rendered six-chapter campaign passed with **18 sun seeds, 11 optional motes, six restored observatories, and zero deaths**. Chapters advanced through their actual Follow the light buttons, using the ordinary route controller's movement, jump, depth, fold, and kindle inputs. The route exercised illustrated landings and moving islands, 3D wall and sentinel bypasses, midair transitions, seed collection, checkpoints, exit kindling, and the ending. All six result states used the independent Canvas 2D renderer. The campaign trace is retained locally in `evidence/independent-2d-campaign.json`, and a full browser recording is retained in the task attachments.
+Result: 20 of 20 tests passing; type check and build clean.
 
-`npm run check` now passes **18 behavioral tests**, strict TypeScript checking, and the production build. A regression test covers fresh fold events when a slow frame misses the key-release sample: each fresh event changes mode once, while held input does not repeat. Native browser trials exercised movement, an airborne fold, four successive reversals, touch jumping and folding, and gentle motion. The fold input queue preserves every fresh keyboard or UI press until the simulation consumes it.
+## The real game in Chrome (`node scripts/e2e.mjs`)
 
-Pause froze the keeper, elapsed time, and audio transport in the illustrated mode. Touch controls released without leaving held buttons. Portrait 390 × 844 and landscape 844 × 390 canvases resized correctly and had no horizontal overflow. Landscape touch mode hides keyboard guidance to keep the directional controls clear. A deliberately missed jump returned the keeper to the active checkpoint while preserving two collected sun seeds; a full reload restored those seeds, the checkpoint, and 2D mode. A separate reload after campaign completion restored all six records and unlocks, completion, collected seeds, and the final checkpoint.
+Against the development server, so routes can drive the actual game loop:
 
-The shared preview became unavailable after the full rendered campaign and portrait inspection. The remaining control, pause, recovery, and layout checks used local headless Chrome with software WebGL. No page errors or failed requests were observed in the passing run. These are browser verification results, not a physical phone, controller, listening, or human enjoyment assessment. Local receipts and screenshots are under the ignored `evidence/` directory.
+| Check | Result |
+|---|---|
+| Title screen with the live demonstration | passed |
+| A Shift press folds; WebGL frames stay fixed (271 → 271) while the illustrated world draws (15 → 51) | passed |
+| Unfolding resumes WebGL drawing | passed |
+| Keyboard walking and jumping | passed |
+| Pause holds the chapter clock | passed |
+| Chapters 1–6 played through the real loop to their observatories with all seeds (15.0, 24.5, 36.0, 19.2, 18.2 and 51.4 s of game time; 3, 5, 1, 3, 4 and 8 folds) | passed |
+| The ending is reached; progress survives a reload | passed |
+| Touch stick and fold button at 390×844 and 844×390 | passed |
+| Page errors and failed requests | none |
 
-## Original release history
+## Rendering
 
-Date: October 7, 2026 (America/Chicago). The following receipts describe the original orthographic-camera release and are retained as history.
+- The fold: the sculpted camera reaches a side view with depth flattened onto
+  the keeper's plane by 60% of the transition; island corners on that plane
+  land within 0.3 px of the illustrated framing. The illustrated world then
+  opens from the keeper's sun. WebGL draws nothing while fully folded.
+- Sculpted world, heaviest chapter: 61–73 draw calls; shaders compile during
+  chapter load (no first-frame or first-fold hitch). Light quality halves
+  shadow cost and caps pixel ratio at 1.25. Graphics drop to Light
+  automatically if frames run slow for 2.5 s.
+- Illustrated world: 0.3 ms of renderer time per frame at 1280×720 and dpr 2;
+  under 1 ms with 4× CPU throttling on a phone viewport.
 
-## Behavioral checks
+## Audio (`node scripts/audio-check.mjs`)
 
-`npm run check` passes 17 behavioral tests, strict TypeScript checking, and the production build. The tests cover movement and landing in both modes, variable jumps, coyote time, jump buffering, held and released fold inputs, immediate rapid reversals, midair state preservation, projected landings, 3D wall bypasses, moving-island inheritance, checkpoint recovery, sentinel collision, seed-gated kindling, complete campaign progression, save restoration and corruption, replay, and safe checkpoint placement.
+40 objective checks: every cue between −18 and −20 LUFS with the two
+arrangements within 0.6 LU, peaks at or below −3 dBFS, no clicks or dropouts,
+91–100% of tonal energy in key, identical note onsets with the fold swinging
+every 2.5 s, the transport within 5 ms of the wall clock across real folds, a
+40-effect stress test without clipping, and 116 ms from unlock to first sound.
+Nobody listened during automated testing; listening on headphones and a phone
+speaker is the remaining review.
 
-The route controller provides ordinary movement, jumping, folding, and kindling inputs. It has no completion or collection shortcut. It completes every chapter with all three sun seeds and zero deaths, including wall detours, sentinel depth bypasses, and midair folds.
+## Not covered automatically
 
-## Rendered campaign
-
-The same controller was run through the actual game's input path and render loop, advancing chapters with their real Follow the light buttons. All six chapter result states and the ending were observed. Final result: **18 sun seeds, 11 optional motes, six restored observatories, zero deaths**. Both exact projection endpoints and their interpolated transitions were observed. A complete browser recording and ending screenshot are retained locally under the task's browser artifacts.
-
-| Chapter              | Result   | Seeds | Deaths | Folds |
-| -------------------- | -------- | ----- | ------ | ----- |
-| The waking garden    | Clear    | 3     | 0      | 1     |
-| The hidden courtyard | Clear    | 3     | 0      | 2     |
-| The tide engine      | Clear    | 3     | 0      | 2     |
-| The violet archive   | Clear    | 3     | 0      | 6     |
-| The night crossing   | Clear    | 3     | 0      | 4     |
-| The last observatory | Complete | 3     | 0      | 4     |
-
-Final capture of the campaign had no console errors or failed network requests. An earlier geometry-batching error was corrected before this complete run by normalizing indexed geometries before merging.
-
-## Controls, recovery, audio, and layout
-
-- A native quick X press changes perspective. Native touch-button clicks trigger jumps and folds. Keyboard movement advanced the keeper by 1.67 units during a 350 ms input trial; released touch controls left no held buttons.
-- A synthetic standard gamepad moved in both axes, jumped, and paused. A physical controller was not attached to this test session.
-- Pause freezes player state, simulation time, and the AudioContext transport. Resuming continues the same transport. Perspective changes keep three running audio sources: wind and the two score stems.
-- Both bundled stereo stems decode, load successfully in the browser, and have matching 48-second duration. File analysis verifies non-clipping levels. Effects were emitted by actual jumps, landings, collection, folds, checkpoints, and chapter completion.
-- Saved seeds, checkpoint position, perspective, elapsed time, records, unlocks, and completion restore after reload. Invalid and future-version saves fall back to a fresh game.
-- Portrait 390 × 844 and landscape 844 × 390 layouts were inspected. Portrait has no horizontal overflow; touch controls, fold button, pause, and settings remain usable. Short panels scroll within the available screen.
-- Automated browser performance was slower with full postprocessing. Automatic graphics adaptation and a manual override were added, with a reduced render scale and fewer passes in performance mode. The portrait performance-mode control trial reported 56 FPS. These observations apply to the test browser and are not a device-independent benchmark.
-
-## Publication
-
-GitHub: [Randroids-Dojo/PerspectiveSol](https://github.com/Randroids-Dojo/PerspectiveSol). Live game: [perspective-sol.vercel.app](https://perspective-sol.vercel.app). Vercel: perspective-sol in randroid88's projects. Git integration uses main for production and runs `npm run check`.
-
-Release code commit `f3f6a88` produced deployment `dpl_FHUG9MK1MW4rSL2hXLtCp8YPBiJD` automatically from Git, with target production and status READY. Its GitHub Actions run also completed successfully. No manual deployment was used. The production page and audio return HTTP 200 without authentication; its JavaScript and styles match the built release. The public browser loaded the game, decoded both music stems, accepted native keyboard folding and jumping, and reached the exact orthographic projection. Production exposes only the read-only snapshot diagnostic.
-
-A second full rendered run after graphics adaptation changes also completed all six chapters with all seeds and zero deaths. Completion, all chapter unlocks, records, the current checkpoint, collected seeds, and perspective were subsequently verified after a full page reload. Changes to this receipt are deployed through the same Git integration.
+A physical Pixel 8 Pro run, a physical gamepad, and Safari.
