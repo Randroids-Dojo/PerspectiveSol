@@ -1214,18 +1214,29 @@ kbd {
   }
 }
 @media (max-width: 560px) {
-  .hud-top {
-    flex-direction: column;
-    align-items: stretch;
-  }
   .hud-right {
-    justify-content: flex-end;
-    position: absolute;
-    right: 0;
-    top: 0;
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-areas: "seeds pause" "motes motes";
+    justify-items: end;
+    gap: 8px;
+  }
+  .sockets {
+    grid-area: seeds;
+  }
+  .hud-right .round {
+    grid-area: pause;
+  }
+  .motes {
+    grid-area: motes;
+    height: 30px;
   }
   .chapter-mark {
-    max-width: 52%;
+    min-width: 0;
+  }
+  .chapter-mark .name {
+    font-size: 20px;
+    line-height: 1.05;
   }
   .with-touch .perspective {
     top: calc(78px + var(--safe-top));
@@ -1279,6 +1290,9 @@ kbd {
     bottom: calc(76px + var(--safe-bottom));
   }
   .title-card {
-    top: 40%;
+    top: 60%;
+  }
+  .title-card h2 {
+    font-size: 44px;
   }
 }

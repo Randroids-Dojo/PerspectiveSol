@@ -61,6 +61,8 @@ export class Interface {
   private toastTimer = 0;
   private hintMode: Mode | null = null;
   private seedsShown = -1;
+  private cardUntil = 0;
+  private pendingHint = 0;
   private backAction: Action = { type: "back" };
   private screenStack: Screen[] = [];
 
@@ -197,6 +199,13 @@ export class Interface {
   }
 
   hint(text: string, mode: Mode | null, seconds = 7.5) {
+    // Never compete with the chapter title card.
+    const wait = this.cardUntil - performance.now();
+    clearTimeout(this.pendingHint);
+    if (wait > 0) {
+      this.pendingHint = window.setTimeout(() => this.hint(text, mode, seconds), wait);
+      return;
+    }
     const el = this.root.querySelector<HTMLElement>("#hint")!;
     el.innerHTML = `${sun("hint-icon")}<p>${promptHtml(text, this.scheme)}</p>`;
     el.classList.add("on");
@@ -206,6 +215,7 @@ export class Interface {
   }
 
   hideHint() {
+    clearTimeout(this.pendingHint);
     this.root.querySelector("#hint")?.classList.remove("on");
     this.hintMode = null;
   }
@@ -224,6 +234,7 @@ export class Interface {
     el.classList.remove("on");
     void el.offsetWidth;
     el.classList.add("on");
+    this.cardUntil = performance.now() + 3200;
   }
 
   /** A seed flies from where it was taken into its socket. */
