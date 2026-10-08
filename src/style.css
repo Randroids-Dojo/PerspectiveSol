@@ -48,10 +48,17 @@ button:disabled {
   opacity: 0.4;
   cursor: default;
 }
-#world {
+#world,
+#world-2d {
+  position: fixed;
+  inset: 0;
   display: block;
   width: 100vw;
   height: 100dvh;
+}
+#world-2d {
+  opacity: 0;
+  pointer-events: none;
 }
 #ui {
   position: fixed;
@@ -335,6 +342,9 @@ button:disabled {
   color: var(--gold);
   display: inline-block;
   margin-right: 4px;
+}
+.hud.touch-enabled .hud-controls {
+  display: none;
 }
 .view-control {
   position: absolute;

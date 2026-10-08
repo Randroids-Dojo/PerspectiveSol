@@ -2,6 +2,7 @@ import "./style.css";
 import { Game, EMPTY, type Input } from "./core";
 import { LEVELS } from "./levels";
 import { World } from "./world";
+import { IllustratedWorld } from "./illustrated-world";
 import { Sound } from "./audio";
 
 const sun =
@@ -67,6 +68,11 @@ try {
 world.reduced = settings.reduced;
 world.quality(settings.low);
 world.load(game.level);
+const illustrated = new IllustratedWorld(
+  document.querySelector<HTMLCanvasElement>("#world-2d")!,
+);
+illustrated.reduced = settings.reduced;
+illustrated.load(game.level);
 type View =
   | "menu"
   | "play"
@@ -80,8 +86,8 @@ let view: View = "menu";
 let returnView: View = "menu";
 let keys = new Set<string>(),
   touchKeys = new Map<number, string>();
-let shiftPulse = false,
-  interactPulse = false,
+let pendingFolds = 0;
+let interactPulse = false,
   jumpPulse = false;
 let toastUntil = 0;
 let lastMode = "";
@@ -109,7 +115,7 @@ function clearInput() {
   keys.clear();
   touchKeys.clear();
   document.querySelectorAll(".held").forEach((b) => b.classList.remove("held"));
-  shiftPulse = false;
+  pendingFolds = 0;
   interactPulse = false;
   jumpPulse = false;
   game.lastJump = false;
@@ -173,6 +179,7 @@ function begin(index?: number) {
     save();
   }
   world.load(game.level);
+  illustrated.load(game.level);
   world.blend = game.mode === "3d" ? 1 : 0;
   playStarted = true;
   setView("play");
@@ -198,6 +205,7 @@ function updateHud() {
     .forEach((s, i) => s.classList.toggle("on", i < shards));
   document.querySelector("#motes")!.textContent = String(game.motes);
   document.querySelector("#touch")!.classList.toggle("show", settings.touch);
+  hud.classList.toggle("touch-enabled", settings.touch);
   if (lastMode !== game.mode) {
     lastMode = game.mode;
     document.querySelector("#view-icon")!.innerHTML =
@@ -237,7 +245,7 @@ ui.addEventListener("click", (e) => {
     return;
   }
   if (action === "shift" && view === "play") {
-    shiftPulse = true;
+    pendingFolds++;
     return;
   }
   if (action === "interact" && view === "play") {
@@ -286,6 +294,7 @@ ui.addEventListener("input", (e) => {
   write(SETTINGS, settings);
   audio.setVolumes(muted ? 0 : settings.music, muted ? 0 : settings.effects);
   world.reduced = settings.reduced;
+  illustrated.reduced = settings.reduced;
   if (key === "low") world.quality(settings.low);
   updateHud();
 });
@@ -341,7 +350,7 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (view === "play") {
-    if (["ShiftLeft", "ShiftRight", "KeyX"].includes(e.code)) shiftPulse = true;
+    if (["ShiftLeft", "ShiftRight", "KeyX"].includes(e.code)) pendingFolds++;
     if (e.code === "Space") jumpPulse = true;
     if (e.code === "KeyE" || e.code === "Enter") interactPulse = true;
   }
@@ -355,7 +364,10 @@ window.addEventListener("blur", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden && view === "play") setView("pause");
 });
-window.addEventListener("resize", () => world.resize());
+window.addEventListener("resize", () => {
+  world.resize();
+  illustrated.resize();
+});
 let padPause = false;
 function input(): Input {
   const touch = [...touchKeys.values()];
@@ -398,7 +410,7 @@ function input(): Input {
       (key("KeyS", "ArrowDown") || touch.includes("down") ? 1 : 0) -
       (key("KeyW", "ArrowUp") || touch.includes("up") ? 1 : 0),
     jump: pjump || jumpPulse || key("Space") || touch.includes("jump"),
-    shift: pshift || shiftPulse || key("ShiftLeft", "ShiftRight", "KeyX"),
+    shift: pshift || key("ShiftLeft", "ShiftRight", "KeyX"),
     interact:
       pinteract ||
       interactPulse ||
@@ -416,6 +428,7 @@ function events() {
     });
     if (eventLog.length > 300) eventLog.shift();
     world.event(e);
+    illustrated.event(e);
     audio.event(e, (e.position.x - game.player.x) / 10);
     if (e.type === "shard") {
       save();
@@ -458,14 +471,18 @@ function frame(now: number) {
     accumulator += dt;
     let stepped = false;
     while (accumulator >= 1 / 120) {
-      game.step(testInput?.(game) ?? controls, 1 / 120);
+      const nextInput = testInput?.(game) ?? {
+        ...controls,
+        shiftPressed: pendingFolds > 0,
+      };
+      if (!testInput && pendingFolds > 0) pendingFolds--;
+      game.step(nextInput, 1 / 120);
       events();
       accumulator -= 1 / 120;
       stepped = true;
       if (view !== "play") break;
     }
     if (stepped) {
-      shiftPulse = false;
       interactPulse = false;
       jumpPulse = false;
     }
@@ -476,7 +493,12 @@ function frame(now: number) {
       audio.footstep(game.time, true);
     updateHud();
   } else accumulator = 0;
-  if (view === "play" && settings.autoGraphics && !settings.low) {
+  if (
+    view === "play" &&
+    world.blend > 0 &&
+    settings.autoGraphics &&
+    !settings.low
+  ) {
     slowFrames =
       rawDt > 1 / 28 ? slowFrames + rawDt : Math.max(0, slowFrames - dt * 2);
     if (slowFrames > 3) {
@@ -485,7 +507,6 @@ function frame(now: number) {
       write(SETTINGS, settings);
     }
   }
-  audio.perspective(world.blend);
   if (now > toastUntil)
     document.querySelector("#toast")!.classList.remove("on");
   world.update(
@@ -495,6 +516,15 @@ function frame(now: number) {
     view !== "play" && view !== "menu",
     rawDt,
   );
+  const flatOpacity = 1 - world.blend * world.blend * (3 - 2 * world.blend);
+  illustrated.update(
+    game,
+    dt,
+    world.flatCamera(),
+    flatOpacity,
+    view !== "play",
+  );
+  audio.perspective(world.blend);
   requestAnimationFrame(frame);
 }
 // Read-only diagnostics expose actual simulation and rendering, with no level-complete shortcut.
@@ -503,7 +533,22 @@ Object.assign(window, {
     snapshot: () => ({
       ...game.snapshot(),
       view,
-      render: world.snapshot(),
+      render: {
+        ...world.snapshot(),
+        engine:
+          world.blend === 0
+            ? "canvas2d"
+            : world.blend === 1
+              ? "webgl"
+              : "crossfade",
+        projection:
+          world.blend === 0
+            ? "illustrated-2d"
+            : world.blend === 1
+              ? "perspective"
+              : "transition",
+        flat: illustrated.snapshot(),
+      },
       audio: audio.snapshot(),
       events: [...eventLog],
       saveAvailable: hasSave,
@@ -512,6 +557,7 @@ Object.assign(window, {
       ? {
           game,
           world,
+          illustrated,
           audio,
           setInputSource: (source: typeof testInput) => (testInput = source),
         }

@@ -10,6 +10,8 @@ export type Input = {
   z: number;
   jump: boolean;
   shift: boolean;
+  // Fresh UI presses remain distinct when a slow render frame misses key release.
+  shiftPressed?: boolean;
   interact: boolean;
 };
 export const EMPTY: Input = {
@@ -230,7 +232,7 @@ export class Game {
     this.elapsed += dt;
     this.invincible = Math.max(0, this.invincible - dt);
     this.noticeCooldown = Math.max(0, this.noticeCooldown - dt);
-    if (input.shift && !this.lastShift) this.shift();
+    if (input.shiftPressed || (input.shift && !this.lastShift)) this.shift();
     this.lastShift = input.shift;
     if (input.jump && !this.lastJump) this.buffer = 0.14;
     else this.buffer = Math.max(0, this.buffer - dt);

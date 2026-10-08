@@ -1,6 +1,6 @@
 # Perspective Sol
 
-**A world with two ways through.** Carry a little sun through six floating observatories. Fold the world into a 2D path; unfold it to explore depth and get around obstacles. Perspective changes are playable transitions: motion, moving platforms, collectibles, checkpoints, timers, and the score keep their state.
+**A world with two ways through.** Carry a little sun through six floating observatories. Fold into a separately illustrated 2D world; unfold into a sculpted 3D world to explore depth and get around obstacles. The two independent renderers crossfade while motion, moving platforms, collectibles, checkpoints, timers, and the score keep their state.
 
 ## Play
 
@@ -37,7 +37,7 @@ npm run dev       # http://localhost:5186
 npm run check     # behavioral tests, TypeScript, production build
 ```
 
-Vite, TypeScript, and Three.js. The deterministic simulation in `src/core.ts` is shared by both perspectives. `src/world.ts` interpolates normalized camera projection matrices between exact orthographic and perspective endpoints. Static sculpted artwork is batched by material; shadows, atmospheric layers, and bloom have a performance setting. No third-party asset service is needed during play.
+Vite, TypeScript, Canvas 2D, and Three.js. The deterministic simulation in `src/core.ts` is shared by both renderers. `src/illustrated-world.ts` is a dedicated Canvas 2D renderer with its own illustrated island artwork, keeper animation, botanical silhouettes, architecture, particles, and parallax sky. It imports no Three.js code and consumes no 3D scene output. `src/world.ts` renders the sculpted 3D world, aligning its outgoing camera during the canvas crossfade. Fully folded play stops WebGL draw calls. Static sculpted artwork is batched by material; shadows, atmospheric layers, and bloom have a performance setting. No third-party asset service is needed during play.
 
 The original stereo score is shipped as two phase-aligned 48-second MP3 stems. The same AudioContext transport runs both stems; perspective opens and closes the depth stem without restarting the music. Sound effects are synthesized at runtime. To reproduce the stems, run `python3 scripts/compose.py` with ffmpeg installed. The fonts are bundled with their OFL licenses.
 

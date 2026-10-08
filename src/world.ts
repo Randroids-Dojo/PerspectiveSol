@@ -209,6 +209,8 @@ export class World {
   fps = 60;
   frames = 0;
   fpsTime = 0;
+  renderedFrames = 0;
+  active = true;
   level: Level | null = null;
   beacon = 0;
   private ambient: T.HemisphereLight;
@@ -912,7 +914,7 @@ export class World {
     this.target.y = lerp(this.target.y, targetY, Math.min(1, dt * 3.8));
     this.target.z = lerp(this.target.z, targetZ, Math.min(1, dt * 4));
     const aspect = this.width / this.height;
-    const viewHeight = aspect < 0.8 ? 19 : aspect < 1.3 ? 16 : 13.6;
+    const viewHeight = this.flatCamera().viewHeight;
     const distance = viewHeight / (2 * Math.tan(T.MathUtils.degToRad(40) / 2));
     this.camera.position
       .copy(this.target)
@@ -1043,10 +1045,31 @@ export class World {
       }
     }
     this.renderer.info.reset();
-    this.composer.render();
+    // The orthographic endpoint only aligns the outgoing scene during the fold.
+    // Fully folded play is drawn by the independent illustrated Canvas 2D scene.
+    this.active = this.blend > 0;
+    this.renderer.domElement.style.visibility = this.active
+      ? "visible"
+      : "hidden";
+    this.renderer.domElement.setAttribute("aria-hidden", String(!this.active));
+    if (this.active) {
+      this.composer.render();
+      this.renderedFrames++;
+    }
+  }
+  flatCamera() {
+    const aspect = this.width / this.height;
+    return {
+      x: this.target.x,
+      y: this.target.y,
+      viewHeight: aspect < 0.8 ? 19 : aspect < 1.3 ? 16 : 13.6,
+    };
   }
   snapshot() {
     return {
+      engine: "webgl",
+      active: this.active,
+      frames: this.renderedFrames,
       blend: this.blend,
       fps: Math.round(this.fps),
       drawCalls: this.renderer.info.render.calls,

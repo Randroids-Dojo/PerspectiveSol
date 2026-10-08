@@ -91,6 +91,20 @@ test("each fresh fold press works immediately, including rapid reversals", () =>
   assert.equal(g.deaths, 0);
   assert.equal(g.player.grounded, true);
 });
+test("fresh fold events survive missed key-release samples without repeating held input", () => {
+  const g = new Game();
+  g.collected.add("s0");
+  for (let i = 0; i < 6; i++) {
+    g.step({ ...EMPTY, shift: true, shiftPressed: true }, 1 / 120);
+    assert.equal(g.shifts, i + 1);
+    assert.equal(g.mode, i % 2 === 0 ? "2d" : "3d");
+    tick(g, 3, { ...EMPTY, shift: true });
+    assert.equal(g.shifts, i + 1);
+  }
+  assert.ok(g.collected.has("s0"));
+  close(g.elapsed, 24 / 120);
+  assert.equal(g.deaths, 0);
+});
 test("projected landing links a distant island and unfolding retains its actual support", () => {
   const g = new Game();
   const r = runChapter(g);

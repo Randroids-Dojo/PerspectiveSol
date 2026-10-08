@@ -1,6 +1,22 @@
 # Verification receipt
 
-Date: October 7, 2026 (America/Chicago).
+## Independent 2D renderer correction
+
+Date: October 7, 2026 (America/Chicago). This supersedes the original release's camera-only 2D implementation.
+
+The folded world now uses a separate Canvas 2D context and original illustrated artwork. Source inspection confirms that `src/illustrated-world.ts` imports no Three.js code and draws no 3D output. Fully folded play hides the WebGL canvas and skips its render pass. During an observed 1.2-second trial, WebGL frames stayed at 91 while illustrated frames advanced from 1,222 to 1,242; simulation time and the existing three-source music transport continued. A second headless native-input trial independently confirmed that WebGL frames stayed at 14, Canvas 2D frames advanced, and WebGL draw calls remained zero.
+
+The complete rendered six-chapter campaign passed with **18 sun seeds, 11 optional motes, six restored observatories, and zero deaths**. Chapters advanced through their actual Follow the light buttons, using the ordinary route controller's movement, jump, depth, fold, and kindle inputs. The route exercised illustrated landings and moving islands, 3D wall and sentinel bypasses, midair transitions, seed collection, checkpoints, exit kindling, and the ending. All six result states used the independent Canvas 2D renderer. The campaign trace is retained locally in `evidence/independent-2d-campaign.json`, and a full browser recording is retained in the task attachments.
+
+`npm run check` now passes **18 behavioral tests**, strict TypeScript checking, and the production build. A regression test covers fresh fold events when a slow frame misses the key-release sample: each fresh event changes mode once, while held input does not repeat. Native browser trials exercised movement, an airborne fold, four successive reversals, touch jumping and folding, and gentle motion. The fold input queue preserves every fresh keyboard or UI press until the simulation consumes it.
+
+Pause froze the keeper, elapsed time, and audio transport in the illustrated mode. Touch controls released without leaving held buttons. Portrait 390 × 844 and landscape 844 × 390 canvases resized correctly and had no horizontal overflow. Landscape touch mode hides keyboard guidance to keep the directional controls clear. A deliberately missed jump returned the keeper to the active checkpoint while preserving two collected sun seeds; a full reload restored those seeds, the checkpoint, and 2D mode. A separate reload after campaign completion restored all six records and unlocks, completion, collected seeds, and the final checkpoint.
+
+The shared preview became unavailable after the full rendered campaign and portrait inspection. The remaining control, pause, recovery, and layout checks used local headless Chrome with software WebGL. No page errors or failed requests were observed in the passing run. These are browser verification results, not a physical phone, controller, listening, or human enjoyment assessment. Local receipts and screenshots are under the ignored `evidence/` directory.
+
+## Original release history
+
+Date: October 7, 2026 (America/Chicago). The following receipts describe the original orthographic-camera release and are retained as history.
 
 ## Behavioral checks
 
