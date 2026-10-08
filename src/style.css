@@ -678,7 +678,9 @@ kbd {
 }
 .primary:focus-visible,
 .secondary:focus-visible,
-.ghost:focus-visible {
+.ghost:focus-visible,
+.scheme-gamepad .screen button:focus,
+.scheme-gamepad .screen input:focus {
   outline: 2px solid var(--gold);
   outline-offset: 3px;
 }

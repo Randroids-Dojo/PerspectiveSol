@@ -248,6 +248,8 @@ function finishChapter() {
 
 function showEnding() {
   phase = "ending";
+  // The sunrise is seen with depth.
+  game.mode = "3d";
   ui.showHud(false);
   audio.cue("ending");
   audio.stinger("ending");
@@ -445,7 +447,8 @@ function frame(now: number) {
   view.sinceSwitch += dt;
   view.focus = { ...rig.focus };
   view.shake = settings.shake ? rig.shake : 0;
-  view.cinematic += ((phase === "title" ? 1 : 0) - view.cinematic) * Math.min(1, dt * 2.5);
+  const cinematic = phase === "title" || phase === "ending" ? 1 : 0;
+  view.cinematic += (cinematic - view.cinematic) * Math.min(1, dt * (phase === "ending" ? 0.4 : 2.5));
 
   const layers = layerOpacity(sculpted ? view.fold : 1);
   canvas3d.style.visibility = sculpted && layers.sculpted > 0 ? "visible" : "hidden";
@@ -472,6 +475,9 @@ function frame(now: number) {
 // --------------------------------------------------------------- startup
 
 addEventListener("resize", resize);
+addEventListener("pagehide", () => {
+  if (phase === "play" || phase === "pause") save();
+});
 addEventListener("blur", () => {
   if (phase === "play") pauseGame();
 });

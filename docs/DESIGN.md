@@ -1,29 +1,91 @@
-# Perspective Sol
+# Perspective Sol: game design
 
-A keeper carries a small sun through six ruined observatories. The core verb is **fold**: Shift / X changes between a sculpted Three.js world and a separately illustrated Canvas 2D world. These are independent renderers with independent artwork. The 2D renderer draws its own islands, keeper, gardens, architecture, collectibles, hazards, particles, and layered skies; it never uses the 3D scene, rendered images, meshes, or textures. Depth stops separating islands, collectibles, and hazards. Unfold to walk around walls and sentinels. Both renderers read one simulation, one player, the same moving islands, and the same collection/progression state.
+Art, sound and interface direction live in [WORLD.md](WORLD.md). This file is
+the rules, the controls and the campaign.
 
-During a switch, the outgoing 3D camera aligns with the flat play plane and the two canvases crossfade continuously. The 2D camera uses the same world-space anchor and framing, so the keeper stays in place. Fully folded play hides the WebGL canvas and stops WebGL draw calls; Canvas 2D renders every frame. Unfolding resumes the 3D renderer from the current simulation, without reloading the level or restarting its clocks, audio, collectibles, or momentum. Every fresh fold input can reverse a transition immediately. Gentle motion shortens the transition and reduces illustrated character and scenery animation.
+## The verb
 
-## Complete loop
+**Fold** (Shift, X, F or J; X or a shoulder on a controller; the Fold button on
+touch) switches between two independently rendered worlds over one
+deterministic simulation (`src/sim/game.ts`):
 
-Walk, jump, fold, collect three sun seeds, and kindle the chapter's observatory. Six distinct chapters introduce depth collapse, bypassing walls, moving islands, sentinels, and combined traversal. Checkpoints keep failure recoverable. Optional light motes and chapter best times support replay. Final restoration has an ending and chapter replay. Progress is saved locally, including collected seeds, chapter unlocks, records, and completion.
+| | Folded · flat (2D) | Unfolded · depth (3D) |
+|---|---|---|
+| Renderer | Canvas 2D storybook (`src/render2d`) | three.js sculpture (`src/render3d`) |
+| Depth | Ignored: anything overlapping in x and y touches | Real: overlap needs all three axes |
+| Islands far apart in depth | One path | Out of reach |
+| Walls, rocks, sentinels at other depths | Block or kill | Walk around or past |
+| Star bridges | Solid | A faint outline |
+| Sunglass | An outline | Solid |
+| Distant lanterns | Within reach | Out of reach |
+| Moving in depth | Invisible | Ferries you across |
 
-## Visual direction
+The switch always succeeds, on the ground or in midair, and never resets
+motion, clocks, collectibles or music. Rules change at the instant of the
+press; the pictures follow over 0.6 s (0.26 s with gentle motion). Anything the
+keeper overlaps at that instant becomes passable until they are clear of it
+(`game.ghosts`), so a switch can never trap or kill. Unfolding places the
+keeper at the depth of the island they stand on, or are above.
 
-Sculpted limestone suspended above a cloud ocean; patinated bronze celestial instruments, hand-inlaid golden lines, wind-bent gardens, orbiting sun seeds, and a small ivory keeper with a vermilion scarf. Palette: sea glass #9bc9d1, limestone #dde1d4, bronze #b99557, sunlight #f4c774, ink #102f45, scarf #cc6659. Light changes through violet dusk and blue night to a peach dawn. Cinematic silhouettes and deep atmospheric layers carry the scene; compact restrained game UI keeps the world central. Display typography uses a locally hosted serif and controls a locally hosted humanist sans.
+## Movement
 
-The separate 2D treatment is a celestial storybook illustration: inked botanical silhouettes, individually drawn masonry and gold emblems, paper grain, hand-drawn cloud ribbons, parallax observatories, engraved sun rings, and a profile keeper carrying a little sun. The six chapter palettes carry across both art treatments. Static illustrated island artwork is cached in 2D canvases; moving positions, collection visibility, sentinels, checkpoints, the exit instrument, and character animation are drawn from live game state. Landing edges and wall widths remain aligned with the shared collision geometry.
+Tuned in `src/sim/constants.ts`: 6.2 u/s run reached in 0.1 s, a held jump of
+about 2.1 units (0.78 s airtime, roughly 4.8 units across), a tap hop of about
+0.5, softer gravity near the apex of a held jump, faster falls, coyote time
+(0.1 s), jump buffering (0.13 s), corner nudges on head bumps, and small ledges
+climbed while walking. Moving islands carry the keeper. Falling, a sentinel or
+being crushed returns the keeper to the last sundial checkpoint, keeping every
+seed, mote and lantern.
 
-## Sound direction
+## Elements
 
-An original pentatonic score of felt keys, warm sustained harmonics, subtle percussion, and airy textures. The score keeps its transport when folding; the 3D harmonic layer opens and closes with perspective. Wind ambience and filtered spatial effects connect footsteps, jumping, stone contact, seed collection, checkpoints, sentinels, and beacon restoration. Music and effects have independent volume, pause suspends transport, and sound begins only after user interaction.
+Islands (five art styles, one collision box), moving plinths (x, y or depth),
+star bridges (2D only), sunglass (3D only), lanterns (touch to light), gates
+(sink when their lantern is lit), lantern bridges (form when lit), sunwalls and
+rock spires (full solids), sentinels (patrolling hazards), three sun seeds per
+chapter, optional light motes, sundial checkpoints, and the observatory, which
+wakes only when it holds three seeds.
 
-## Play acceptance
+## Campaign
 
-- Actual keyboard, touch, and gamepad input moves the keeper and causes jumps, landings, collection, recovery, and chapter completion.
-- Perspective can switch on the ground or in the air without restarting physics, audio, moving platforms, collectibles, or the timer.
-- 2D play uses its own Canvas 2D scene and artwork. WebGL frame counts stay fixed while fully folded play continues; returning to 3D resumes rendering the current shared state.
-- 2D collapse makes depth-separated islands traversable; 3D bypasses walls that block the flattened path.
-- Coyote time, jump buffering, variable-height jumps, motion inheritance, and generous landings support the platforming.
-- The complete six-chapter route reaches the ending through ordinary simulated inputs, including required folds and depth detours.
-- Pause, focus loss, replay, corrupted saves, reduced motion, mobile layouts, audio output, and deployed loading are verified separately.
+Each chapter introduces one idea and combines it with the ones before. The
+intended solution of every chapter is a scripted route in `src/sim/routes.ts`
+that the tests play to the end through ordinary inputs. `npx tsx scripts/map.ts`
+draws blueprints of every layout.
+
+1. **The waking garden** (morning): walk and jump; fold to reach islands far
+   behind; unfold to walk past a rock spire that blocks the flat path.
+2. **The hidden courtyard** (noon): sunwalls seal the flat path but can be
+   walked around with depth; a stair of islands that only lines up folded.
+3. **The tide engine** (afternoon): ferries and lifts; a depth ferry that only
+   moves anything when unfolded; a star bridge that only exists folded.
+4. **The violet archive** (dusk): sentinels guard one depth; a far lantern lit
+   from the flat world opens a gate; a lantern behind a sunwall, reached with
+   depth, raises a bridge.
+5. **The night crossing** (night): sunglass stairs; walking from glass onto
+   starlight by folding on the seam; jumping off glass and folding in midair.
+6. **The last observatory** (dawn): everything together, up to the grand
+   observatory and the ending.
+
+Teaching happens in the world: short contextual prompts appear when the keeper
+reaches the place they apply (`level.hints`), worded for the active control
+scheme and dismissed by doing the thing.
+
+## Controls
+
+| Action | Keyboard | Controller | Touch |
+|---|---|---|---|
+| Walk | A D or ← → | Left stick or d-pad | Floating stick (left half) |
+| Depth (3D) | W S or ↑ ↓ | Left stick or d-pad | Stick up and down |
+| Jump (hold for height) | Space, K or Z | A | Jump |
+| Fold or unfold | Shift, X, F or J | X, Y or any shoulder | Fold |
+| Pause | Esc or P | Start | II |
+| Mute | M | | |
+
+Menus work with the mouse, touch, arrows and Enter, or a controller.
+
+## Progress
+
+Saved locally (`src/save.ts`): unlocked chapters, best times, motes found, the
+chapter in progress (checkpoint, seeds, lanterns, timer, perspective) and
+settings. Continue resumes at the last checkpoint. Corrupt saves are ignored.
