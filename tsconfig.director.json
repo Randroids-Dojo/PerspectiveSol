@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/main.ts", "src/ui", "src/input.ts", "src/save.ts", "src/sim", "src/view.ts", "src/contract.ts", "tests", "scripts/*.ts"]
+}

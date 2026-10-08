@@ -4,31 +4,29 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width,initial-scale=1,viewport-fit=cover"
+      content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"
     />
-    <meta name="theme-color" content="#102f45" />
+    <meta name="theme-color" content="#14202c" />
     <meta
       name="description"
-      content="Fold a world. Find its sun. A complete perspective-shifting adventure through six floating observatories."
+      content="Fold the world flat, unfold it into depth. Carry a little sun home through six floating observatories in a hand-crafted 2D and 3D platformer."
     />
     <meta property="og:title" content="Perspective Sol" />
     <meta
       property="og:description"
-      content="A world with two ways through. Play a cinematic 2D / 3D puzzle adventure."
+      content="A platformer with two worlds: a sculpted 3D sky and an illustrated 2D storybook. Switch between them at any moment."
     />
     <link rel="icon" type="image/svg+xml" href="/sun.svg" />
+    <link rel="preload" href="/fonts/cormorant.ttf" as="font" type="font/ttf" crossorigin />
+    <link rel="preload" href="/fonts/dm-sans.ttf" as="font" type="font/ttf" crossorigin />
     <title>Perspective Sol</title>
   </head>
   <body>
-    <canvas id="world" aria-label="Perspective Sol game world"></canvas>
-    <canvas
-      id="world-2d"
-      aria-label="Perspective Sol illustrated 2D world"
-      aria-hidden="true"
-    ></canvas>
+    <canvas id="world" aria-label="Sculpted 3D world"></canvas>
+    <canvas id="world-2d" aria-label="Illustrated 2D world"></canvas>
     <div id="ui"></div>
-    <div id="loading">
-      <span class="loading-sun">☀</span>
+    <div id="loading" aria-live="polite">
+      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="32" cy="32" r="9"/><path d="M32 4v9M32 51v9M4 32h9M51 32h9M12.2 12.2l6.4 6.4M45.4 45.4l6.4 6.4M12.2 51.8l6.4-6.4M45.4 18.6l6.4-6.4"/></svg>
       <p>Gathering the light…</p>
     </div>
     <script type="module" src="/src/main.ts"></script>
